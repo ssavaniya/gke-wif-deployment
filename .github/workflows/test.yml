@@ -11,7 +11,6 @@ jobs:
 test:
 runs-on: self-hosted
 
-```
 steps:
   - uses: actions/checkout@v4
 
@@ -41,4 +40,3 @@ steps:
   - name: Get Pods
     run: |
       kubectl get pods -A
-```
