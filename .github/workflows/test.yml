@@ -24,7 +24,8 @@ steps:
     uses: google-github-actions/setup-gcloud@v2
 
   - name: Verify Authentication
-    run: gcloud auth list
+    run: |
+      gcloud auth list
 
   - name: Get GKE Credentials
     uses: google-github-actions/get-gke-credentials@v2
@@ -33,4 +34,5 @@ steps:
       location: "us-central1-a"
 
   - name: Get Pods
-    run: kubectl get pods -A
+    run: |
+      kubectl get pods -A
