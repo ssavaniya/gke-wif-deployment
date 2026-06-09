@@ -8,9 +8,10 @@ permissions:
   id-token: write
 
 jobs:
-  test:
+  get-pods:
     runs-on: self-hosted
-  steps:
+
+    steps:
     - uses: actions/checkout@v4
 
     - name: Authenticate to Google Cloud
@@ -18,7 +19,7 @@ jobs:
       with:
         workload_identity_provider: "projects/153524623211/locations/global/workloadIdentityPools/github-action/providers/github-action"
         service_account: "github-gke-deployer@proserv-task02.iam.gserviceaccount.com"
-
+        
     - name: Setup gcloud
       uses: google-github-actions/setup-gcloud@v2
 
@@ -31,6 +32,6 @@ jobs:
       with:
         cluster_name: "my-tf-cluster"
         location: "us-central1-a"
-
+        
     - name: Get Pods
       run: kubectl get pods
