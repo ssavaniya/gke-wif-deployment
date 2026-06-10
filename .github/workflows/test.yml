@@ -1,0 +1,37 @@
+name: GKE Test
+
+on: 
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  get-pods:
+    runs-on: self-hosted
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: "projects/153524623211/locations/global/workloadIdentityPools/github-action/providers/github-action"
+        service_account: "github-gke-deployer@proserv-task02.iam.gserviceaccount.com"
+        
+    - name: Setup gcloud
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Verify Authentication
+      run: |
+        gcloud auth list
+
+    - name: Get GKE Credentials
+      uses: google-github-actions/get-gke-credentials@v2
+      with:
+        cluster_name: "my-tf-cluster"
+        location: "us-central1-a"
+        
+    - name: Get Pods
+      run: kubectl get pods
