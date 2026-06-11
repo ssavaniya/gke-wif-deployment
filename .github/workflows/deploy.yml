@@ -2,8 +2,8 @@ name: Deploy to GKE
 
 on:
   push:
-  branches:
-    - main
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -14,30 +14,30 @@ jobs:
     runs-on: self-hosted
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v2
-      with:
-        workload_identity_provider: "projects/153524623211/locations/global/workloadIdentityPools/github-action/providers/github-action"
-        service_account: "github-gke-deployer@proserv-task02.iam.gserviceaccount.com"
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/153524623211/locations/global/workloadIdentityPools/github-action/providers/github-action"
+          service_account: "github-gke-deployer@proserv-task02.iam.gserviceaccount.com"
 
-     - name: Setup gcloud
-       uses: google-github-actions/setup-gcloud@v2
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
 
-     - name: Get GKE Credentials
-       uses: google-github-actions/get-gke-credentials@v2
-       with:
-         cluster_name: "my-tf-cluster"
-         location: "us-central1-a"
+      - name: Get GKE Credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: "my-tf-cluster"
+          location: "us-central1-a"
 
-     - name: Deploy
-       run: |
-         kubectl apply -f k8s/deployment.yaml
-         kubectl apply -f k8s/service.yaml
+      - name: Deploy
+        run: |
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
 
-     - name: Verify Deployment
-       run: |
-         kubectl rollout status deployment/hello-gke
-         kubectl get pods
-         kubectl get svc
+      - name: Verify Deployment
+        run: |
+          kubectl rollout status deployment/hello-gke
+          kubectl get pods
+          kubectl get svc
