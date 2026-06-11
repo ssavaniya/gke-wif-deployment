@@ -1,23 +1,14 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: Service
 metadata:
-  name: hello-gke
+  name: hello-gke-service
 
 spec:
-  replicas: 2
-
   selector:
-    matchLabels:
-      app: hello-gke
+    app: hello-gke
 
-  template:
-    metadata:
-      labels:
-        app: hello-gke
-
-    spec:
-      containers:
-        - name: hello-gke
-          image: us-central1-docker.pkg.dev/proserv-task02/springboot-repo/hello-gke:v1
-          ports:
-          - containerPort: 8080
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
