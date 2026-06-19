@@ -6,12 +6,12 @@ on:
      - main
 
 env:
-PROJECT_ID: proserv-task02
-REGION: us-central1
-REPOSITORY: springboot-repo
-IMAGE: hello-gke
-CLUSTER: my-tf-cluster
-ZONE: us-central1-a
+  PROJECT_ID: proserv-task02
+  REGION: us-central1
+  REPOSITORY: springboot-repo
+  IMAGE: hello-gke
+  CLUSTER: my-tf-cluster
+  ZONE: us-central1-a
 
 permissions:
   contents: read
