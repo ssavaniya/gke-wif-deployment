@@ -60,11 +60,14 @@ jobs:
           ${CLUSTER} \
           --zone ${ZONE}
 
-      - name: Deploy
+      - name: Update image in deployment
         run: |
-          kubectl set image deployment/hello-gke \
-          hello-gke=us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}
+          sed -i "s|IMAGE_PLACEHOLDER|us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}|g" k8s/deployment.yaml
 
-      - name: Wait for rollout
+      - name: Apply manifests
+        run: |
+          kubectl apply -f k8s/
+      
+      - name: Verify rollout
         run: |
           kubectl rollout status deployment/hello-gke
