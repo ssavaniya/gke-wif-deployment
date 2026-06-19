@@ -1,0 +1,6 @@
+.git
+.gitignore
+
+target/*.jar.original
+
+terraform/
