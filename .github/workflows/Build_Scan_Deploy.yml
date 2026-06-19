@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+      
+permissions:
+  contents: read
+  id-token: write
 
 env:
   PROJECT_ID: proserv-task02
@@ -12,51 +16,49 @@ env:
   IMAGE: hello-gke
 
 jobs:
-
   deploy:
     runs-on: self-hosted
     
     steps:
+    - uses: actions/checkout@v4
+    
+    - name: Verify Environment
+      run: |
+        kubectl get nodes
+        gcloud auth list
+        
+    - name: Build Jar
+      run: |
+        chmod +x mvnw
+        ./mvnw clean package
 
-  - uses: actions/checkout@v4
+    - name: Configure Docker
+      run: |
+        gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
-  - name: Verify Environment
-    run: |
-      kubectl get nodes
-      gcloud auth list
+    - name: Build Image
+      run: |
+        docker build \
+        -t us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }} .
 
-  - name: Build Jar
-    run: |
-      chmod +x mvnw
-      ./mvnw clean package
+    - name: Push Image
+      run: |
+        docker push \
+        us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}
 
-  - name: Configure Docker
-    run: |
-      gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+    - name: Update Deployment
+      run: |
+        sed -i "s|IMAGE_PLACEHOLDER|us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}|g" k8s/deployment.yaml
 
-  - name: Build Image
-    run: |
-      docker build \
-      -t us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }} .
+    - name: Deploy
+      run: |
+        kubectl apply -f k8s/
 
-  - name: Push Image
-    run: |
-      docker push \
-      us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}
+    - name: Wait Rollout
+      run: |
+        kubectl rollout status deployment/hello-gke
 
-  - name: Update Deployment
-    run: |
-      sed -i "s|IMAGE_PLACEHOLDER|us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}|g" k8s/deployment.yaml
-
-  - name: Deploy
-    run: |
-      kubectl apply -f k8s/
-
-  - name: Wait Rollout
-    run: |
-      kubectl rollout status deployment/hello-gke
-
-  - name: Verify
-    run: |
-      kubectl get pods
-      kubectl get svc
+    - name: Verify
+      run: |
+        kubectl get pods
+        kubectl get svc
