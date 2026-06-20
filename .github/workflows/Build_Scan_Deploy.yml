@@ -62,7 +62,35 @@ jobs:
       run: |
         docker push \
         us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}
+      
+    - name: Wait for Vulnerability Scan
+      run: |
+        echo "Waiting 60 seconds for scan..."
+        sleep 60
 
+    - name: Check Vulnerabilities
+      run: |
+        IMAGE_PATH="us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}"
+
+        gcloud artifacts docker images describe \
+        $IMAGE_PATH \
+        --show-package-vulnerability \
+        > vuln-output.txt
+
+        cat vuln-output.txt
+    
+        if grep -q "CRITICAL:" vuln-output.txt; then
+          echo "CRITICAL vulnerabilities found"
+          exit 1
+        fi
+    
+        if grep -q "HIGH:" vuln-output.txt; then
+          echo "HIGH vulnerabilities found"
+          exit 1
+        fi
+    
+        echo "Scan passed"
+        
     - name: Update Deployment
       run: |
         sed -i "s|IMAGE_PLACEHOLDER|us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}|g" k8s/deployment.yaml
