@@ -9,13 +9,19 @@ import java.util.Map;
 public class HelloController {
 
 @GetMapping("/")
-public Map<String, String> hello() {
+public Map<String, String> loadBalancer() {
 
     return Map.of(
-            "message", "Hello from Private GKE",
-            "environment", "dev"
+            "message", "Hello from Load Balancer",
+    );
+}
+
+@GetMapping("/ingress")
+public Map<String, String> ingress() {
+
+    return Map.of(
+            "message", "Hello from Ingress",
     );
 }
 
 }
-
