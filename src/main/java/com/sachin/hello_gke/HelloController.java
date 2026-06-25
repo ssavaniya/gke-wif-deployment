@@ -8,20 +8,19 @@ import java.util.Map;
 @RestController
 public class HelloController {
 
-@GetMapping("/")
-public Map<String, String> loadBalancer() {
+    @GetMapping("/")
+    public Map<String, String> loadBalancer() {
 
-    return Map.of(
-            "message", "Hello from Load Balancer",
-    );
-}
+        return Map.of(
+                "message", "Hello from Load Balancer",
+        );
+    }
 
-@GetMapping("/ingress")
-public Map<String, String> ingress() {
+    @GetMapping("/ingress")
+    public Map<String, String> ingress() {
 
-    return Map.of(
-            "message", "Hello from Ingress",
-    );
-}
-
+        return Map.of(
+                "message", "Hello from Ingress",
+        );
+    }
 }
