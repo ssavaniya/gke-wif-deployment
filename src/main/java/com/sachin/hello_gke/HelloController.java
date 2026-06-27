@@ -1,21 +1,27 @@
 package com.sachin.hello_gke;
 
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
+import com.sachin.hello_gke.service.HelloService;
+
+import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
 @RestController
 public class HelloController {
 
-@GetMapping("/")
-public Map<String,String> hello() {
+    private final HelloService helloService;
 
-return Map.of(
-"message","Hello from Ingress",
-"environment","dev"
-);
+    public HelloController(
+            HelloService helloService
+    ) {
+        this.helloService =
+                helloService;
+    }
 
-}
+    @GetMapping("/")
+    public Map<String,String> hello() {
 
+        return helloService
+                .getMessage();
+    }
 }

@@ -43,8 +43,13 @@ jobs:
       run: |
         kubectl get nodes
         gcloud auth list
-        
-    - name: Build Jar
+      
+   - name: Run Unit Tests
+     run: |
+      chmod +x mvnw
+      ./mvnw test
+
+    - name: Build Application
       run: |
         chmod +x mvnw
         ./mvnw clean package
