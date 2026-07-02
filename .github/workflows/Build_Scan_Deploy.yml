@@ -44,10 +44,17 @@ jobs:
         kubectl get nodes
         gcloud auth list
     
-    - name: Run Unit Tests
+    - name: Run Unit Tests + Generate Coverage
       run: |
         chmod +x mvnw
-        ./mvnw test
+        ./mvnw clean test
+
+    - name: Upload Coverage Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: jacoco-report
+        path: |
+          target/site/jacoco
 
     - name: Build Application
       run: |
