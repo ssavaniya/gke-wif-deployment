@@ -1,14 +1,15 @@
-#==========================================
-# Enable GKE API:
-#==========================================
+# ==========================================
+# Enable GKE API
+# ==========================================
+
 resource "google_project_service" "container" {
   service            = "container.googleapis.com"
   disable_on_destroy = false
 }
 
-# ========================================
+# ==========================================
 # Private GKE Cluster
-# ========================================
+# ==========================================
 
 resource "google_container_cluster" "private_cluster" {
 
@@ -30,16 +31,12 @@ resource "google_container_cluster" "private_cluster" {
 
   private_cluster_config {
 
-    # Nodes receive only private IPs
-    enable_private_nodes = true
-
-    # Control plane accessible only from VPC
+    enable_private_nodes    = true
     enable_private_endpoint = true
 
-    # Dedicated CIDR for GKE control plane
     master_ipv4_cidr_block = "172.16.0.0/28"
   }
-  # Control who can access the private API endpoint
+
   master_authorized_networks_config {
 
     cidr_blocks {
@@ -53,15 +50,14 @@ resource "google_container_cluster" "private_cluster" {
     workload_pool = "${var.project_id}.svc.id.goog"
   }
 
-
   depends_on = [
     google_project_service.container
   ]
 }
 
-# ========================================
-# Node Pool
-# ========================================
+# ==========================================
+# Primary Node Pool
+# ==========================================
 
 resource "google_container_node_pool" "primary_nodes" {
 
@@ -71,15 +67,34 @@ resource "google_container_node_pool" "primary_nodes" {
 
   node_count = 1
 
-  node_config {
+  autoscaling {
 
-    machine_type = "e2-medium"
+    min_node_count = 1
+    max_node_count = 3
 
-    preemptible = true
-
-    oauth_scopes = [
-      "https://www.googleapis.com/auth/cloud-platform"
-    ]
   }
+
+  management {
+
+    auto_repair  = true
+    auto_upgrade = true
+
+  }
+
+  node_config {
+  machine_type = "e2-medium"
+
+  disk_size_gb = 100
+  disk_type    = "pd-balanced"
+
+  image_type = "COS_CONTAINERD"
+
+  preemptible = true
+
+  oauth_scopes = [
+    "https://www.googleapis.com/auth/cloud-platform"
+  ]
+}
+
 
 }

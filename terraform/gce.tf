@@ -1,6 +1,6 @@
 resource "google_compute_instance" "my-tf-instance" {
   name         = "my-tf-instance"
-  machine_type = "e2-micro"
+  machine_type = "e2-medium"
   zone         = var.zone
 
   boot_disk {
@@ -20,4 +20,9 @@ resource "google_compute_instance" "my-tf-instance" {
     "self-hosted-vm",
     "iap-ssh"
   ]
+lifecycle {
+  ignore_changes = [
+    metadata
+  ]
+}
 }
