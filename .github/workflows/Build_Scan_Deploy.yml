@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      
+
 permissions:
   contents: read
   id-token: write
@@ -18,135 +18,150 @@ env:
 jobs:
   deploy:
     runs-on: self-hosted
-    
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v2
-      with:
-          workload_identity_provider: "projects/153524623211/locations/global/workloadIdentityPools/github-action/providers/github-action"
-          service_account: "github-gke-deployer@proserv-task02.iam.gserviceaccount.com"
-    
-    - name: Setup gcloud
-      uses: google-github-actions/setup-gcloud@v2
-      with:
-        install_components: gke-gcloud-auth-plugin
+      - name: Checkout Source
+        uses: actions/checkout@v4
 
-    - name: Get GKE Credentials
-      uses: google-github-actions/get-gke-credentials@v2
-      with:
-          cluster_name: "my-tf-cluster"
-          location: "us-central1-a"
-    
-    - name: Verify Environment
-      run: |
-        kubectl get nodes
-        gcloud auth list
-    
-    - name: Run Unit Tests + Generate Coverage
-      run: |
-        chmod +x mvnw
-        ./mvnw clean test
+      - name: Cache Maven Dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
 
-    - name: Upload Coverage Report
-      uses: actions/upload-artifact@v4
-      with:
-        name: jacoco-report
-        path: |
-          target/site/jacoco
-   
-    - name: SonarQube Analysis
-      env:
-       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/153524623211/locations/global/workloadIdentityPools/github-action/providers/github-action
+          service_account: github-gke-deployer@proserv-task02.iam.gserviceaccount.com
 
-      run: |
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
 
-        ./mvnw sonar:sonar \
-        -Dsonar.organization=ssavaniya \
-        -Dsonar.projectKey=ssavaniya_gke-wif-deployment \
-        -Dsonar.host.url=https://sonarcloud.io \
-        -Dsonar.token=${SONAR_TOKEN} \
-        -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+      - name: Get GKE Credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: my-tf-cluster
+          location: us-central1-a
 
-    - name: Build Application
-      run: |
-        chmod +x mvnw
-        ./mvnw verify -DskipTests
+      - name: Verify Environment
+        run: |
+          kubectl get nodes
+          gcloud auth list
 
-    - name: Configure Docker
-      run: |
-        gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+      - name: Run Unit Tests + Generate Coverage
+        run: |
+          chmod +x mvnw
+          ./mvnw clean test
 
-    - name: Build Image
-      run: |
-        docker build \
-        -t us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }} .
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco
 
-    - name: Push Image
-      run: |
-        docker push \
-        us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}
-        
-    - name: Wait for Vulnerability Scan
-      run: |
-        echo "Waiting 60 seconds..."
-        sleep 60
+      - name: SonarCloud Analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          ./mvnw sonar:sonar \
+            -Dsonar.organization=ssavaniya \
+            -Dsonar.projectKey=ssavaniya_gke-wif-deployment \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.token=${SONAR_TOKEN} \
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
 
-    - name: Generate Vulnerability Report
-      run: |
-        IMAGE_PATH="us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}"
-    
-        gcloud artifacts docker images describe \
-          $IMAGE_PATH \
-          --show-package-vulnerability \
-          > vulnerability-report.txt
-    
-    - name: Upload Scan Report
-      uses: actions/upload-artifact@v4
-      with:
-        name: vulnerability-report
-        path: vulnerability-report.txt
-    
-    - name: Enforce Security Policy
-      run: |
-    
-        if grep -q "CRITICAL:" vulnerability-report.txt; then
-          echo "Deployment blocked (CRITICAL)"
-          exit 1
-        fi
-    
-        if grep -q "HIGH:" vulnerability-report.txt; then
-          echo "Deployment blocked (HIGH)"
-          exit 1
-        fi
-    
-        echo "Scan passed"
-        
-    - name: Deploy
-      run: |
-        helm upgrade --install hello-gke ./helm/hello-gke \
-        --set image.repository=us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE} \
-        --set image.tag=${{ github.sha }}
+      - name: Build Application
+        run: |
+          chmod +x mvnw
+          ./mvnw package -DskipTests
 
-    - name: Wait Rollout
-      run: |
-        kubectl rollout status deployment/hello-gke
-      
-    - name: Get Service IP
-      run: |
-        echo "SERVICE_IP=$(kubectl get svc hello-gke -o jsonpath='{.status.loadBalancer.ingress[0].ip}')" >> $GITHUB_ENV
+      - name: Configure Docker
+        run: |
+          gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
-    - name: Functional Test
-      run: |
-        docker run \
-          -v ${{ github.workspace }}/tests:/etc/newman \
-          postman/newman \
-          run /etc/newman/hello-gke-functional.postman_collection.json \
-          --env-var baseUrl=http://${SERVICE_IP}
+      - name: Build Docker Image
+        run: |
+          docker build \
+            -t us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }} .
 
-    - name: Verify
-      run: |
-        kubectl get pods
-        kubectl get svc
-        helm list
+      - name: Push Docker Image
+        run: |
+          docker push us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}
+
+      - name: Wait for Vulnerability Scan
+        run: sleep 60
+
+      - name: Generate Vulnerability Report
+        run: |
+          IMAGE_PATH="us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}"
+
+          gcloud artifacts docker images describe \
+            ${IMAGE_PATH} \
+            --show-package-vulnerability \
+            > vulnerability-report.txt
+
+      - name: Upload Vulnerability Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: vulnerability-report
+          path: vulnerability-report.txt
+
+      - name: Enforce Security Policy
+        run: |
+          if grep -q "CRITICAL:" vulnerability-report.txt; then
+            echo "Deployment blocked (CRITICAL)"
+            exit 1
+          fi
+
+          if grep -q "HIGH:" vulnerability-report.txt; then
+            echo "Deployment blocked (HIGH)"
+            exit 1
+          fi
+
+          echo "Security scan passed"
+
+      - name: Deploy using Helm
+        run: |
+          helm upgrade --install hello-gke ./helm/hello-gke \
+            --set image.repository=us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE} \
+            --set image.tag=${{ github.sha }}
+
+      - name: Wait for Rollout
+        run: |
+          kubectl rollout status deployment/hello-gke
+
+      - name: Get Service IP
+        run: |
+          echo "SERVICE_IP=$(kubectl get svc hello-gke -o jsonpath='{.status.loadBalancer.ingress[0].ip}')" >> $GITHUB_ENV
+
+      - name: Functional Test
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/tests:/etc/newman \
+            postman/newman \
+            run /etc/newman/hello-gke-functional.postman_collection.json \
+            --env-var baseUrl=http://${SERVICE_IP}
+
+      - name: Verify Deployment
+        run: |
+          kubectl get pods
+          kubectl get svc
+          helm list
+
+      - name: Cleanup Runner
+        if: always()
+        run: |
+          echo "Cleaning Docker..."
+          docker system prune -af
+
+          echo "Cleaning GitHub Runner workspace..."
+          rm -rf ~/actions-runner/_work/*
+
+          echo "Cleaning temporary reports..."
+          rm -f vulnerability-report.txt
+
