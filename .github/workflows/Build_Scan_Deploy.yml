@@ -63,15 +63,16 @@ jobs:
       run: |
 
         ./mvnw sonar:sonar \
-          -Dsonar.organization=ssavaniya \
-          -Dsonar.projectKey=ssavaniya_gke-wif-deployment \
-          -Dsonar.host.url=https://sonarcloud.io \
-          -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+        -Dsonar.organization=ssavaniya \
+        -Dsonar.projectKey=ssavaniya_gke-wif-deployment \
+        -Dsonar.host.url=https://sonarcloud.io \
+        -Dsonar.token=${SONAR_TOKEN} \
+        -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
 
     - name: Build Application
       run: |
         chmod +x mvnw
-        ./mvnw clean package -DskipTests
+        ./mvnw verify -DskipTests
 
     - name: Configure Docker
       run: |
@@ -121,31 +122,31 @@ jobs:
         fi
     
         echo "Scan passed"
-              
-    - name: Update Deployment
-      run: |
-        sed -i "s|IMAGE_PLACEHOLDER|us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}|g" k8s/deployment.yaml
-
+        
     - name: Deploy
       run: |
         helm upgrade --install hello-gke ./helm/hello-gke \
+        --set image.repository=us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE} \
         --set image.tag=${{ github.sha }}
 
     - name: Wait Rollout
       run: |
         kubectl rollout status deployment/hello-gke
+      
+    - name: Get Service IP
+      run: |
+        echo "SERVICE_IP=$(kubectl get svc hello-gke -o jsonpath='{.status.loadBalancer.ingress[0].ip}')" >> $GITHUB_ENV
 
     - name: Functional Test
-
       run: |
-
         docker run \
-         -v ${{ github.workspace }}/tests:/etc/newman \
-         postman/newman \
-        run /etc/newman/hello-gke-functional.postman_collection.json \
-        --env-var baseUrl=http://8.232.82.128
+          -v ${{ github.workspace }}/tests:/etc/newman \
+          postman/newman \
+          run /etc/newman/hello-gke-functional.postman_collection.json \
+          --env-var baseUrl=http://${SERVICE_IP}
 
     - name: Verify
       run: |
         kubectl get pods
         kubectl get svc
+        helm list
