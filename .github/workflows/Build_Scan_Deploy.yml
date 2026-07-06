@@ -128,7 +128,8 @@ jobs:
 
     - name: Deploy
       run: |
-        kubectl apply -f k8s/
+        helm upgrade --install hello-gke ./helm/hello-gke \
+        --set image.tag=${{ github.sha }}
 
     - name: Wait Rollout
       run: |
