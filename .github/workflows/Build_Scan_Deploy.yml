@@ -139,6 +139,15 @@ jobs:
         run: |
           echo "SERVICE_IP=$(kubectl get svc hello-gke -o jsonpath='{.status.loadBalancer.ingress[0].ip}')" >> $GITHUB_ENV
 
+      - name: Port Forward
+        run: |
+          kubectl port-forward svc/hello-gke 8080:80 &
+          sleep 10
+
+      - name: Set BASE_URL
+        run: |
+          echo "BASE_URL=localhost:8080" >> $GITHUB_ENV
+
       - name: Functional Test
         run: |
           docker run --rm \
