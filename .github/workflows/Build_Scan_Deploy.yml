@@ -135,36 +135,25 @@ jobs:
         run: |
           kubectl rollout status deployment/hello-gke
 
-      - name: Get Service IP
-        run: |
-          echo "SERVICE_IP=$(kubectl get svc hello-gke -o jsonpath='{.status.loadBalancer.ingress[0].ip}')" >> $GITHUB_ENV
 
       - name: Port Forward
         run: |
-          kubectl port-forward svc/hello-gke 8080:80 &
-          sleep 10
+          kubectl port-forward svc/hello-gke 8080:80 >/tmp/pf.log 2>&1 &
+          sleep 15
 
       - name: Set BASE_URL
         run: |
           echo "BASE_URL=localhost:8080" >> $GITHUB_ENV
     
-      - name: Install Newman
-        run: |
-          npx newman run tests/hello-gke-functional.postman_collection.json \
-          --env-var baseUrl=http://${BASE_URL}
-
-      - name: Run Newman
-        run: |
-          newman run tests/hello-gke-functional.postman_collection.json \
-          --env-var baseUrl=http://${BASE_URL}
 
       - name: Functional Test
         run: |
           docker run --rm \
-            -v ${{ github.workspace }}/tests:/etc/newman \
-            postman/newman \
-            run /etc/newman/hello-gke-functional.postman_collection.json \
-            --env-var baseUrl=http://${BASE_URL}
+          --network host \
+          -v ${{ github.workspace }}/tests:/etc/newman \
+          postman/newman \
+          run /etc/newman/hello-gke-functional.postman_collection.json \
+          --env-var baseUrl=http://${BASE_URL}
 
       - name: Verify Deployment
         run: |
