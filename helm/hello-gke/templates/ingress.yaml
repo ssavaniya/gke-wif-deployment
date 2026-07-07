@@ -3,8 +3,12 @@ kind: Ingress
 
 metadata:
   name: hello-gke
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
 
 spec:
+  ingressClassName: nginx
+
   rules:
     - http:
         paths:
