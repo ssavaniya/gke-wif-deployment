@@ -150,7 +150,8 @@ jobs:
     
       - name: Install Newman
         run: |
-          npm install -g newman
+          npx newman run tests/hello-gke-functional.postman_collection.json \
+          --env-var baseUrl=http://${BASE_URL}
 
       - name: Run Newman
         run: |
