@@ -147,6 +147,15 @@ jobs:
       - name: Set BASE_URL
         run: |
           echo "BASE_URL=localhost:8080" >> $GITHUB_ENV
+    
+      - name: Install Newman
+        run: |
+          npm install -g newman
+
+      - name: Run Newman
+        run: |
+          newman run tests/hello-gke-functional.postman_collection.json \
+          --env-var baseUrl=http://${BASE_URL}
 
       - name: Functional Test
         run: |
@@ -154,7 +163,7 @@ jobs:
             -v ${{ github.workspace }}/tests:/etc/newman \
             postman/newman \
             run /etc/newman/hello-gke-functional.postman_collection.json \
-            --env-var baseUrl=http://${SERVICE_IP}
+            --env-var baseUrl=http://${BASE_URL}
 
       - name: Verify Deployment
         run: |
