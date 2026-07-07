@@ -167,9 +167,6 @@ jobs:
           echo "Cleaning Docker..."
           docker system prune -af
 
-          echo "Cleaning GitHub Runner workspace..."
-          rm -rf ~/actions-runner/_work/*
-
           echo "Cleaning temporary reports..."
           rm -f vulnerability-report.txt
 
