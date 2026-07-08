@@ -1,272 +1,247 @@
-# Private Google Kubernetes Engine (GKE) Cluster
+# 05 - Workload Identity Federation
 
-## Overview
+## Objective
 
-Google Kubernetes Engine (GKE) is Google Cloud's managed Kubernetes service that simplifies the deployment, management, and scaling of containerized applications.
+This project uses Google Cloud Workload Identity Federation (WIF) to securely authenticate GitHub Actions with Google Cloud Platform without storing or managing long-lived service account keys.
 
-This project deploys a **private GKE Standard cluster**, where worker nodes are provisioned without public IP addresses and communicate within a custom Virtual Private Cloud (VPC). The cluster is managed using Terraform and follows production-oriented networking and security best practices.
+Instead of downloading JSON key files, GitHub Actions exchanges its OpenID Connect (OIDC) token for temporary Google Cloud credentials during each workflow execution.
+
+This is Google's recommended authentication method for CI/CD pipelines.
 
 ---
 
-# Cluster Architecture
+## Why Workload Identity Federation?
+
+Traditional CI/CD pipelines often authenticate using downloaded Service Account JSON keys.
+
+```
+GitHub Actions
+        │
+JSON Key File
+        │
+Google Cloud
+```
+
+Although functional, this approach introduces several security risks:
+
+- Long-lived credentials
+- Secret rotation overhead
+- Risk of accidental key exposure
+- Increased attack surface
+
+Workload Identity Federation eliminates these issues by issuing short-lived credentials only when the workflow runs.
+
+```
+GitHub Actions
+       │
+OIDC Token
+       │
+Workload Identity Federation
+       │
+Temporary Credential
+       │
+Google Cloud APIs
+```
+
+---
+
+## Authentication Flow
 
 ```mermaid
-flowchart TB
+sequenceDiagram
 
-    Internet((Internet))
+participant GH as GitHub Actions
+participant OIDC as GitHub OIDC
+participant WIF as Workload Identity Federation
+participant IAM as IAM Service Account
+participant GCP as Google Cloud APIs
 
-    LB[External Load Balancer]
+GH->>OIDC: Request OIDC Token
+OIDC-->>GH: JWT Token
 
-    Service[Kubernetes Service]
+GH->>WIF: Exchange JWT
 
-    Pods[Application Pods]
+WIF->>IAM: Impersonate Service Account
 
-    Deployment[Kubernetes Deployment]
+IAM-->>GH: Temporary Access Token
 
-    NodePool[GKE Node Pool]
-
-    Cluster[Private GKE Cluster]
-
-    Subnet[Private Subnet]
-
-    NAT[Cloud NAT]
-
-    Internet --> LB
-    LB --> Service
-    Service --> Pods
-    Deployment --> Pods
-    Cluster --> NodePool
-    NodePool --> Pods
-    Subnet --> Cluster
-    NAT --> Cluster
+GH->>GCP: Call Google Cloud APIs
 ```
 
 ---
 
-# Cluster Configuration
+## Components Created
 
-The cluster is configured with the following characteristics:
+The following Google Cloud resources were configured.
 
-| Feature | Configuration |
-|----------|---------------|
-| Cluster Type | Standard GKE Cluster |
-| Networking | VPC Native |
-| Cluster Visibility | Private |
-| Worker Nodes | Private |
-| Node Pool | Dedicated |
-| IP Allocation | Alias IP Ranges |
-| Infrastructure | Terraform Managed |
+### Workload Identity Pool
 
----
+Acts as the trust boundary between GitHub and Google Cloud.
 
-# Why a Private Cluster?
+Example
 
-Unlike a public cluster, a private GKE cluster keeps worker nodes isolated from the public internet.
-
-Benefits include:
-
-- Reduced attack surface
-- Private communication within the VPC
-- Improved security posture
-- Production-ready architecture
-- Better compliance with enterprise security requirements
-
-Only authorized systems within the network can communicate directly with the cluster nodes.
-
----
-
-# Cluster Components
-
-## Control Plane
-
-The Kubernetes control plane is fully managed by Google Cloud.
-
-It is responsible for:
-
-- Scheduling workloads
-- Managing cluster state
-- Monitoring node health
-- Orchestrating deployments
-- Exposing the Kubernetes API
-
-Because GKE is a managed service, Google handles upgrades, availability, and maintenance of the control plane.
-
----
-
-## Node Pool
-
-The cluster uses a dedicated node pool to host application workloads.
-
-Separating the node pool from the cluster provides:
-
-- Independent scaling
-- Simplified upgrades
-- Flexible machine type selection
-- Better resource management
-
-Each node runs:
-
-- kubelet
-- Container runtime
-- Kubernetes networking components
-
----
-
-## Kubernetes Nodes
-
-Worker nodes execute containerized workloads.
-
-Responsibilities include:
-
-- Running application Pods
-- Pulling container images
-- Reporting status to the control plane
-- Managing Pod lifecycle
-
-The nodes communicate internally using private IP addresses.
-
----
-
-## Pods
-
-Pods are the smallest deployable unit in Kubernetes.
-
-Each Pod contains one or more containers that share:
-
-- Network namespace
-- Storage volumes
-- IP address
-
-The sample Java application is deployed as Kubernetes Pods managed by a Deployment.
-
----
-
-## Deployment
-
-The application is deployed using a Kubernetes Deployment.
-
-The Deployment provides:
-
-- Declarative configuration
-- Rolling updates
-- Rollback capability
-- Replica management
-- Self-healing
-
-If a Pod becomes unavailable, Kubernetes automatically creates a replacement.
-
----
-
-## Service
-
-A Kubernetes Service exposes the application running inside the cluster.
-
-This project uses a **LoadBalancer** Service, allowing external users to access the application while Kubernetes automatically distributes traffic across healthy Pods.
-
----
-
-# Cluster Networking
-
-The cluster uses **VPC-native networking** with Alias IP ranges.
-
-This provides:
-
-- Dedicated IP ranges for Pods
-- Dedicated IP ranges for Services
-- Efficient routing
-- Better scalability
-- Native Google Cloud networking integration
-
-All worker nodes communicate over the custom VPC created with Terraform.
-
----
-
-# Deployment Workflow
-
-```text
-Developer
-      │
-      ▼
-GitHub Repository
-      │
-      ▼
-GitHub Actions
-      │
-      ▼
-Build Docker Image
-      │
-      ▼
-Push Image to Artifact Registry
-      │
-      ▼
-Authenticate to Google Cloud
-      │
-      ▼
-Retrieve GKE Credentials
-      │
-      ▼
-kubectl apply
-      │
-      ▼
-Deployment
-      │
-      ▼
-Pods
-      │
-      ▼
-LoadBalancer Service
-      │
-      ▼
-Application
+```
+github-action
 ```
 
 ---
 
-# Security Features
+### OIDC Provider
 
-The cluster incorporates several production-oriented security practices:
+Configured to trust GitHub's OIDC endpoint.
 
-- Private worker nodes
-- Custom VPC
-- Private subnet
-- Cloud NAT for outbound connectivity
-- Infrastructure as Code using Terraform
-- IAM-based access control
-- GitHub Actions authentication using Workload Identity Federation
-- No long-lived service account keys
+Issuer
+
+```
+https://token.actions.githubusercontent.com
+```
 
 ---
 
-# Operational Benefits
+### Attribute Mapping
 
-Deploying the platform on a private GKE cluster provides:
+The following attributes were mapped.
 
-- Managed Kubernetes control plane
-- High availability
-- Automated node management
-- Rolling updates
-- Self-healing workloads
-- Horizontal scalability
-- Secure networking
-- Reduced operational overhead
+| GitHub Claim | Google Attribute |
+|--------------|------------------|
+| assertion.sub | google.subject |
+| assertion.repository | attribute.repository |
+
+These mappings allow IAM policies to restrict authentication to a specific GitHub repository.
 
 ---
 
-# Best Practices Followed
+### IAM Service Account
 
-- Private cluster deployment
-- Dedicated node pool
-- Infrastructure as Code
-- VPC-native networking
-- Alias IP ranges
-- Declarative Kubernetes deployments
-- Secure CI/CD authentication
-- Least privilege IAM
+A dedicated deployment service account was created.
+
+Example
+
+```
+github-gke-deployer@PROJECT_ID.iam.gserviceaccount.com
+```
+
+This service account is impersonated by GitHub Actions after successful authentication.
 
 ---
 
-# Next Section
+## IAM Roles Assigned
 
-The next document explains the CI/CD pipeline, including GitHub Actions, Docker image build, authentication using Workload Identity Federation, and automated deployment to the private GKE cluster.
+The deployment service account was granted only the permissions required by the CI/CD pipeline.
 
-➡ **06-github-actions-cicd.md**
+Examples include:
+
+- Kubernetes Engine Developer
+- Kubernetes Engine Cluster Viewer
+- Artifact Registry Writer
+- Service Account User
+- Workload Identity User
+
+Following the principle of least privilege helps reduce security risk.
+
+---
+
+## GitHub Actions Configuration
+
+Authentication is performed using the official Google GitHub Action.
+
+```yaml
+- name: Authenticate to Google Cloud
+  uses: google-github-actions/auth@v2
+  with:
+    workload_identity_provider: projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-action/providers/github-action
+    service_account: github-gke-deployer@PROJECT_ID.iam.gserviceaccount.com
+```
+
+No credentials are stored inside GitHub Secrets.
+
+---
+
+## Benefits
+
+Using Workload Identity Federation provides several advantages.
+
+- No Service Account JSON keys
+- Temporary credentials
+- Automatic credential rotation
+- Reduced secret management
+- Better compliance
+- Recommended by Google Cloud
+- Safer CI/CD pipelines
+
+---
+
+## Validation
+
+Authentication can be verified within GitHub Actions.
+
+```bash
+gcloud auth list
+```
+
+Example output
+
+```
+Credentialed Accounts
+
+ACTIVE  ACCOUNT
+
+*       github-gke-deployer@PROJECT_ID.iam.gserviceaccount.com
+```
+
+Cluster access can also be verified.
+
+```bash
+kubectl get nodes
+```
+
+Successful execution confirms that GitHub Actions has authenticated correctly using Workload Identity Federation.
+
+---
+
+## Troubleshooting
+
+### Unauthorized Client
+
+Possible causes:
+
+- Incorrect Workload Identity Provider
+- Wrong Service Account
+- Missing Workload Identity User role
+
+---
+
+### Permission Denied
+
+Verify IAM roles assigned to the deployment service account.
+
+---
+
+### Invalid Principal Set
+
+Usually caused by incorrect attribute mapping or repository restrictions.
+
+Verify:
+
+- Repository name
+- Branch conditions
+- Attribute mappings
+- IAM bindings
+
+---
+
+## Best Practices
+
+- Never download Service Account keys.
+- Use dedicated deployment service accounts.
+- Grant minimum required IAM permissions.
+- Restrict authentication to approved repositories.
+- Use short-lived credentials whenever possible.
+
+---
+
+## Outcome
+
+The project authenticates GitHub Actions securely using Google's recommended Workload Identity Federation mechanism.
+
+No static credentials are stored, significantly improving the security posture of the CI/CD pipeline.

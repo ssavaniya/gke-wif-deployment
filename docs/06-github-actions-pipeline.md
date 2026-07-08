@@ -1,278 +1,424 @@
-# GitHub Actions CI/CD
+# GitHub Actions CI/CD Pipeline
 
 ## Overview
 
-This project uses **GitHub Actions** to implement a Continuous Integration and Continuous Deployment (CI/CD) pipeline for the sample Java application.
+GitHub Actions is used to automate the complete Continuous Integration and Continuous Deployment (CI/CD) process for this project.
 
-Every code change pushed to the repository automatically triggers the pipeline, which builds the application, creates a Docker image, authenticates to Google Cloud using Workload Identity Federation (WIF), pushes the image to Artifact Registry, and deploys the latest version to the private Google Kubernetes Engine (GKE) cluster.
+Every change pushed to the **main** branch automatically triggers a deployment pipeline that builds, tests, scans, and deploys the application to Google Kubernetes Engine (GKE).
 
-The pipeline eliminates manual deployment steps and provides a secure, repeatable deployment process.
+The pipeline follows modern DevSecOps practices by integrating automated testing, vulnerability scanning, and secure authentication before deployment.
 
 ---
 
-# CI/CD Architecture
+# Pipeline Objectives
+
+The CI/CD pipeline automates the following tasks:
+
+- Source code checkout
+- Google Cloud authentication
+- Maven dependency caching
+- Unit testing
+- Code coverage generation
+- SonarCloud analysis
+- Docker image build
+- Artifact Registry image push
+- Container vulnerability scanning
+- Security policy enforcement
+- Helm deployment
+- Kubernetes rollout verification
+- Functional API testing
+- Environment cleanup
+
+---
+
+# High-Level Pipeline Flow
 
 ```mermaid
-flowchart LR
+flowchart TD
 
-Developer --> GitHub
+A[Developer Push] --> B[GitHub Actions]
 
-GitHub --> GitHubActions
+B --> C[Checkout Source]
 
-GitHubActions --> Build[Build Java Application]
+C --> D[Authenticate to GCP]
 
-Build --> Docker[Build Docker Image]
+D --> E[Get GKE Credentials]
 
-Docker --> ArtifactRegistry[Push Image to Artifact Registry]
+E --> F[Run Unit Tests]
 
-ArtifactRegistry --> Authenticate
+F --> G[SonarCloud Analysis]
 
-Authenticate[Authenticate using Workload Identity Federation]
+G --> H[Build Docker Image]
 
-Authenticate --> GKE[Private GKE Cluster]
+H --> I[Push Artifact Registry]
 
-GKE --> Deployment[Kubernetes Deployment]
+I --> J[Vulnerability Scan]
 
-Deployment --> Pods[Application Pods]
+J --> K{Security Check}
 
-Pods --> Service[LoadBalancer Service]
+K -->|PASS| L[Deploy with Helm]
+
+K -->|FAIL| X[Pipeline Stops]
+
+L --> M[Verify Rollout]
+
+M --> N[Functional Tests]
+
+N --> O[Cleanup]
 ```
 
 ---
 
-# Pipeline Workflow
+# Workflow Trigger
 
-The deployment process follows these steps:
+The workflow is configured to execute whenever code is pushed to the **main** branch.
 
-1. Developer pushes code to GitHub.
-2. GitHub Actions workflow is triggered.
-3. The Java application is built using Maven.
-4. A Docker image is created.
-5. The image is pushed to Google Artifact Registry.
-6. GitHub Actions authenticates to Google Cloud using Workload Identity Federation.
-7. Kubernetes credentials are retrieved.
-8. Kubernetes manifests are applied to the private GKE cluster.
-9. Kubernetes performs a rolling update.
-10. The latest application version becomes available through the LoadBalancer Service.
+```yaml
+on:
+  push:
+    branches:
+      - main
+```
+
+This enables fully automated deployments without manual intervention.
 
 ---
 
-# Workflow Components
+# Pipeline Stages
 
-## Source Control
+## 1. Checkout Source Code
 
-GitHub hosts:
+The first stage downloads the latest application source code from GitHub.
 
-- Application source code
-- Kubernetes manifests
-- Terraform configuration
-- GitHub Actions workflow definitions
-- Project documentation
+```yaml
+uses: actions/checkout@v4
+```
 
-Version control provides collaboration, traceability, and change history.
+Purpose:
 
----
-
-## Continuous Integration
-
-The CI stage validates every code change before deployment.
-
-Tasks include:
-
-- Checking out source code
-- Building the Java application
-- Packaging the application
-- Building the Docker image
-
-Automating these steps reduces manual effort and helps identify issues early in the development lifecycle.
+- Retrieve project files
+- Access Helm chart
+- Access Terraform
+- Access Kubernetes manifests
 
 ---
 
-## Container Image Build
+## 2. Authenticate to Google Cloud
 
-The application is containerized using Docker.
+Authentication is performed using Workload Identity Federation.
 
-The pipeline:
+```yaml
+google-github-actions/auth
+```
 
-- Builds a new image
-- Applies the appropriate image tag
-- Prepares the image for deployment
+Benefits:
 
-Containerization ensures consistency across development, testing, and production environments.
-
----
-
-## Artifact Registry
-
-Successfully built images are pushed to Google Artifact Registry.
-
-Artifact Registry provides:
-
-- Secure image storage
-- Image versioning
-- Native integration with Google Kubernetes Engine
-- IAM-based access control
-
-The GKE cluster pulls images directly from Artifact Registry during deployment.
+- No service account keys
+- Temporary credentials
+- Secure authentication
+- IAM integration
 
 ---
 
-## Authentication
+## 3. Configure Google Cloud SDK
 
-GitHub Actions authenticates to Google Cloud using **Workload Identity Federation (WIF)**.
+The Google Cloud SDK is installed along with the Kubernetes authentication plugin.
 
-This approach removes the need to store long-lived service account keys inside the repository.
+Purpose:
 
-Authentication is based on:
-
-- OpenID Connect (OIDC)
-- Short-lived credentials
-- IAM trust relationships
-
-This follows Google's recommended authentication model for GitHub Actions.
+- gcloud commands
+- kubectl authentication
+- Artifact Registry access
 
 ---
 
-# Deployment
+## 4. Get GKE Credentials
 
-After authentication, the pipeline:
+The workflow retrieves Kubernetes credentials.
 
-- Retrieves GKE cluster credentials
-- Connects to the Kubernetes API server
-- Applies Kubernetes manifests
-- Updates the running Deployment
+```bash
+gcloud container clusters get-credentials
+```
 
-Kubernetes automatically performs a rolling update, ensuring minimal application downtime.
+This allows GitHub Actions to communicate securely with the private GKE cluster.
 
 ---
 
-# Deployment Flow
+## 5. Verify Environment
 
-```text
-Developer
+Basic validation is performed before deployment.
 
-      │
+Examples:
 
-      ▼
+```bash
+kubectl get nodes
 
-Push Code to GitHub
+gcloud auth list
+```
 
-      │
+Purpose:
 
-      ▼
+- Verify authentication
+- Verify cluster connectivity
 
-GitHub Actions
+---
 
-      │
+## 6. Maven Dependency Cache
 
-      ▼
+GitHub Actions caches Maven dependencies to reduce build time.
 
-Build Java Application
+Benefits:
 
-      │
+- Faster builds
+- Reduced network usage
+- Improved pipeline performance
 
-      ▼
+---
 
-Build Docker Image
+## 7. Unit Testing
 
-      │
+JUnit tests are executed.
 
-      ▼
+```bash
+./mvnw clean test
+```
 
-Push Image to Artifact Registry
+If any unit test fails:
 
-      │
+- Pipeline stops
+- Deployment is blocked
 
-      ▼
+---
 
-Authenticate using Workload Identity Federation
+## 8. Code Coverage
 
-      │
+JaCoCo generates code coverage reports.
 
-      ▼
+Reports are uploaded as workflow artifacts.
 
-Retrieve GKE Credentials
+Purpose:
 
-      │
+- Coverage visibility
+- SonarCloud integration
 
-      ▼
+---
 
-kubectl apply
+## 9. SonarCloud Analysis
 
-      │
+Static code analysis is performed.
 
-      ▼
+Checks include:
 
-Rolling Update
+- Code smells
+- Bugs
+- Vulnerabilities
+- Maintainability
+- Coverage
 
-      │
+Poor quality code is detected before deployment.
 
-      ▼
+---
 
-Application Available
+## 10. Build Application
+
+The Spring Boot application is packaged.
+
+```bash
+./mvnw package
+```
+
+Output:
+
+```
+hello-gke.jar
 ```
 
 ---
 
-# Security Considerations
+## 11. Docker Build
 
-The CI/CD pipeline incorporates several security best practices:
+The packaged application is converted into a Docker image.
 
-- No service account keys stored in GitHub
-- Authentication using OpenID Connect (OIDC)
-- Short-lived credentials
-- IAM least privilege access
-- Automated deployments
-- Version-controlled workflow definitions
+```bash
+docker build
+```
 
-These practices reduce credential management overhead while improving the overall security posture of the deployment pipeline.
+The image is tagged using the Git commit SHA.
 
----
+Example:
 
-# Benefits
-
-Implementing CI/CD with GitHub Actions provides several advantages:
-
-- Automated deployments
-- Consistent build process
-- Faster software delivery
-- Reduced manual errors
-- Repeatable deployments
-- Integrated version control
-- Improved collaboration
-- Secure authentication with Google Cloud
+```
+hello-gke:<commit-sha>
+```
 
 ---
 
-# Technologies Used
+## 12. Push to Artifact Registry
 
-| Category | Technology |
-|----------|------------|
-| Source Control | GitHub |
-| CI/CD Platform | GitHub Actions |
-| Build Tool | Maven |
-| Containerization | Docker |
-| Container Registry | Google Artifact Registry |
-| Authentication | Workload Identity Federation (OIDC) |
-| Container Orchestration | Google Kubernetes Engine |
-| Deployment Tool | kubectl |
+The container image is pushed into Artifact Registry.
+
+Artifact Registry becomes the single source of truth for Kubernetes deployments.
 
 ---
 
-# Best Practices Followed
+## 13. Vulnerability Scanning
 
-- Infrastructure and application code stored in Git
-- Automated build and deployment pipeline
-- Secure authentication using Workload Identity Federation
-- No long-lived service account keys
-- Version-controlled workflow definitions
-- Automated rolling deployments
-- Immutable container images
+Google Artifact Analysis scans every image.
+
+The workflow exports a vulnerability report.
+
+Checks include:
+
+- Critical vulnerabilities
+- High vulnerabilities
+- Medium vulnerabilities
+- Low vulnerabilities
 
 ---
 
-# Next Section
+## 14. Security Gate
 
-The next document explains how Workload Identity Federation (WIF) enables secure authentication between GitHub Actions and Google Cloud without the use of service account keys.
+Before deployment, the workflow verifies the scan report.
 
-➡ **07-workload-identity-federation.md**
+Policy:
+
+| Severity | Action |
+|----------|--------|
+| Critical | Block deployment |
+| High | Block deployment |
+| Medium | Warning |
+| Low | Allow |
+
+Only secure images are deployed.
+
+---
+
+## 15. Deploy using Helm
+
+Deployment is performed using Helm.
+
+```bash
+helm upgrade --install
+```
+
+Benefits:
+
+- Versioned deployments
+- Parameterized configuration
+- Easy rollback
+- Repeatable releases
+
+---
+
+## 16. Verify Rollout
+
+The workflow waits for Kubernetes to complete the deployment.
+
+```bash
+kubectl rollout status
+```
+
+If rollout fails, the pipeline exits with an error.
+
+---
+
+## 17. Functional Testing
+
+After deployment, API validation is performed.
+
+Current implementation uses:
+
+- Newman
+- Postman Collection
+
+Tests verify:
+
+- HTTP status
+- JSON response
+- Environment
+- Application message
+
+---
+
+## 18. Deployment Verification
+
+Additional validation commands execute.
+
+Examples:
+
+```bash
+kubectl get pods
+
+kubectl get svc
+
+kubectl get ingress
+
+helm list
+```
+
+Purpose:
+
+- Verify healthy deployment
+- Verify Kubernetes resources
+- Verify Helm release
+
+---
+
+## 19. Cleanup
+
+Temporary resources are removed.
+
+Examples:
+
+- Docker cache
+- Temporary files
+- Runner workspace cleanup
+
+Cleanup reduces disk usage on the self-hosted runner.
+
+---
+
+# Pipeline Security
+
+Several security controls are implemented.
+
+- Workload Identity Federation
+- No service account keys
+- Artifact Registry
+- Vulnerability scanning
+- Security gate before deployment
+- Private GKE cluster
+- Least privilege IAM
+
+---
+
+# Pipeline Benefits
+
+The automated pipeline provides:
+
+- Consistent deployments
+- Faster releases
+- Automated testing
+- Improved security
+- Reduced manual effort
+- Reproducible deployments
+- Better software quality
+
+---
+
+# Current Pipeline Status
+
+The CI/CD pipeline successfully automates:
+
+- Build
+- Test
+- Code analysis
+- Docker image creation
+- Artifact Registry publishing
+- Vulnerability scanning
+- Security enforcement
+- Helm deployment
+- Kubernetes rollout verification
+- Functional API validation
+
+The project now follows a modern GitOps-style deployment workflow suitable for production environments.

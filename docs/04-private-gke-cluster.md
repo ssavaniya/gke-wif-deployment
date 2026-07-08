@@ -1,200 +1,345 @@
-# Networking
+# Private Google Kubernetes Engine (GKE) Cluster
 
 ## Overview
 
-A secure and well-designed network is the foundation of any production Kubernetes platform.
+The application is deployed on a **Private Google Kubernetes Engine (GKE)** cluster.
 
-This project uses a **custom Virtual Private Cloud (VPC)** to provide network isolation and secure communication between Google Cloud resources. The networking architecture follows Google Cloud best practices by deploying workloads in private subnets, enabling Private Google Access, and using Cloud NAT for controlled outbound internet connectivity.
+Unlike a public Kubernetes cluster, a private GKE cluster restricts access to both the worker nodes and the Kubernetes control plane, significantly improving security.
 
-The networking components are provisioned using Terraform, ensuring repeatable and version-controlled deployments.
-
----
-
-# Network Architecture
-
-```mermaid
-flowchart LR
-
-    Internet((Internet))
-
-    NAT[Cloud NAT]
-
-    Router[Cloud Router]
-
-    VPC[Custom VPC]
-
-    Subnet[Private Subnet]
-
-    VM[Compute Engine VM]
-
-    GKE[Private GKE Cluster]
-
-    Nodes[GKE Worker Nodes]
-
-    Pods[Kubernetes Pods]
-
-    Internet --> NAT
-    NAT --> Router
-    Router --> VPC
-    VPC --> Subnet
-    Subnet --> VM
-    Subnet --> GKE
-    GKE --> Nodes
-    Nodes --> Pods
-```
+This architecture closely resembles production environments used by enterprise organizations.
 
 ---
 
-# Networking Components
+# Why a Private Cluster?
 
-## Virtual Private Cloud (VPC)
+A public Kubernetes cluster exposes worker nodes or the Kubernetes API server to the internet.
 
-A custom Virtual Private Cloud (VPC) provides network isolation for all infrastructure components.
+A private cluster keeps both inside the Virtual Private Cloud (VPC), allowing access only from authorized internal networks.
 
-The VPC serves as the primary network boundary for:
+Benefits include:
 
-- Compute Engine VM
-- Private GKE Cluster
-- Kubernetes worker nodes
-- Internal communication between cloud resources
-
-Using a custom VPC provides greater flexibility and control compared to the default VPC.
-
----
-
-## Private Subnet
-
-A dedicated private subnet hosts the Compute Engine VM and GKE worker nodes.
-
-Key characteristics include:
-
-- RFC1918 private IP address range
-- Private Google Access enabled
-- No public IP addresses assigned to GKE worker nodes
-- Controlled network communication within the VPC
-
-This design reduces the attack surface by preventing direct internet access to compute resources.
+- Reduced attack surface
+- Improved network security
+- Internal-only cluster administration
+- Better compliance with enterprise security standards
+- Secure communication between workloads
 
 ---
 
-## Firewall Rules
-
-Firewall rules are configured to control inbound and outbound traffic within the VPC.
-
-The firewall configuration is designed to:
-
-- Allow administrative access where required
-- Permit communication between GKE nodes
-- Restrict unnecessary inbound traffic
-- Follow the principle of least privilege
-
-Proper firewall configuration is critical to maintaining a secure production environment.
-
----
-
-## Private Google Access
-
-Private Google Access enables resources without public IP addresses to communicate with Google Cloud services.
-
-This allows private resources to access services such as:
-
-- Google Kubernetes Engine
-- Cloud Storage
-- Google APIs
-
-without requiring public internet connectivity.
-
----
-
-## Cloud Router
-
-Cloud Router dynamically exchanges routing information with Cloud NAT.
-
-Although Cloud Router is commonly associated with hybrid networking, it is also a required component when configuring Cloud NAT.
-
----
-
-## Cloud NAT
-
-Cloud NAT provides outbound internet access for resources without public IP addresses.
-
-This enables:
-
-- Operating system updates
-- Package downloads
-- Container image pulls
-- Access to external repositories
-
-while preventing unsolicited inbound internet connections.
-
-Using Cloud NAT allows workloads to remain private while still accessing external services when required.
-
----
-
-# Network Traffic Flow
-
-The following diagram illustrates how traffic flows through the platform.
+# Cluster Architecture
 
 ```text
-                 Internet
-                     │
-                     ▼
-               Cloud NAT
-                     │
-                     ▼
-               Cloud Router
-                     │
-                     ▼
-               Custom VPC
-                     │
-        ┌────────────┴────────────┐
-        │                         │
-        ▼                         ▼
-Private Compute VM        Private GKE Cluster
-                                  │
-                                  ▼
-                          Kubernetes Nodes
-                                  │
-                                  ▼
-                           Application Pods
+                    Internet
+                        │
+                        │
+               Cloud NAT (Outbound Only)
+                        │
+────────────────────────────────────────────────────
+
+                Google Cloud VPC
+
+        ┌─────────────────────────────┐
+        │                             │
+        │   Bastion VM                │
+        │        │                    │
+        │        │ kubectl            │
+        │        ▼                    │
+        │  Private GKE Control Plane  │
+        │             │               │
+        │             ▼               │
+        │        Worker Nodes         │
+        │             │               │
+        │             ▼               │
+        │          Kubernetes Pods    │
+        │                             │
+        └─────────────────────────────┘
 ```
 
 ---
 
-# Design Considerations
+# Cluster Configuration
 
-The networking architecture was designed with security, scalability, and operational simplicity in mind.
+The cluster was created with the following characteristics:
 
-Key design decisions include:
-
-- Custom VPC instead of the default network
-- Private subnet for compute resources
-- Private GKE worker nodes
-- Private Google Access enabled
-- Cloud NAT for outbound connectivity
-- Infrastructure managed through Terraform
-- Network isolation between platform components
-
-These design choices closely align with production environments running Kubernetes workloads on Google Cloud.
-
----
-
-# Benefits
-
-This networking design provides several advantages:
-
-- Improved security through private networking
-- Reduced public attack surface
-- Controlled outbound internet connectivity
-- Scalable architecture
-- Infrastructure as Code (IaC)
-- Easier maintenance and auditing
-- Alignment with Google Cloud networking best practices
+| Feature | Configuration |
+|----------|---------------|
+| Cluster Type | Private GKE |
+| Region | us-central1 |
+| Node Location | us-central1-a |
+| Kubernetes Version | Current Stable Release |
+| Image Type | COS Containerd |
+| Networking | VPC Native |
+| Pod Networking | Alias IP |
+| Workload Identity | Enabled |
+| Shielded Nodes | Enabled |
 
 ---
 
-# Next Section
+# Private Nodes
 
-The next document explains the private Google Kubernetes Engine (GKE) cluster, including cluster configuration, node pools, networking, and deployment architecture.
+Worker nodes are created **without public IP addresses**.
 
-➡ **05-private-gke-cluster.md**
+Because of this:
+
+- Nodes cannot be accessed directly from the internet.
+- External systems cannot SSH into the nodes.
+- All cluster administration occurs from resources inside the VPC.
+
+Outbound internet access is provided through Cloud NAT.
+
+---
+
+# Private Control Plane
+
+The Kubernetes API server is also private.
+
+This means:
+
+- kubectl cannot connect from arbitrary networks.
+- Only trusted internal networks may communicate with the control plane.
+- Cloud Shell cannot directly manage the cluster.
+
+For this project, a Compute Engine VM inside the VPC acts as the administration host.
+
+---
+
+# Cluster Administration
+
+The Bastion VM is responsible for managing the Kubernetes cluster.
+
+Typical administrative tasks include:
+
+- Running kubectl
+- Installing Helm charts
+- Viewing logs
+- Managing deployments
+- Troubleshooting workloads
+
+Example:
+
+```bash
+gcloud container clusters get-credentials my-tf-cluster \
+    --zone us-central1-a \
+    --project proserv-task02
+```
+
+Verify cluster connectivity:
+
+```bash
+kubectl get nodes
+```
+
+---
+
+# Node Pool
+
+The cluster uses a dedicated managed node pool.
+
+Configuration:
+
+- Machine Type: e2-medium
+- Spot Virtual Machines
+- Container-Optimized OS
+- Auto Repair enabled
+- Auto Upgrade enabled
+
+Managed node pools simplify lifecycle management by allowing Google Kubernetes Engine to handle node maintenance automatically.
+
+---
+
+# Spot Virtual Machines
+
+The worker nodes use **Spot Virtual Machines**.
+
+Advantages:
+
+- Significantly lower cost
+- Suitable for development and testing
+- Managed automatically by GKE
+
+Trade-offs:
+
+- Nodes may be reclaimed by Google Cloud.
+- Applications should be resilient to node termination.
+
+For production workloads, organizations often combine Spot nodes with regular nodes.
+
+---
+
+# Cluster Autoscaler
+
+Cluster Autoscaler is enabled.
+
+Configuration:
+
+| Minimum Nodes | Maximum Nodes |
+|---------------|---------------|
+| 1 | 3 |
+
+When workload demand increases:
+
+```text
+More Pods
+
+↓
+
+Insufficient Capacity
+
+↓
+
+Cluster Autoscaler
+
+↓
+
+New Worker Node
+
+↓
+
+Pods Scheduled
+```
+
+When workloads decrease, unused nodes are removed automatically.
+
+Benefits:
+
+- Cost optimization
+- Improved scalability
+- Efficient resource utilization
+
+---
+
+# Workload Identity
+
+Workload Identity is enabled on the cluster.
+
+Rather than storing long-lived service account keys inside Kubernetes, workloads receive temporary credentials from Google Cloud IAM.
+
+Benefits:
+
+- No service account keys
+- Improved security
+- IAM integration
+- Short-lived credentials
+- Recommended by Google
+
+Workload Identity is also used by GitHub Actions through Workload Identity Federation.
+
+---
+
+# Kubernetes Networking
+
+The cluster uses **VPC-native networking**.
+
+Separate IP ranges are allocated for:
+
+- Nodes
+- Pods
+- Services
+
+This provides:
+
+- Better scalability
+- Simplified routing
+- Improved network isolation
+
+Traffic flows internally without requiring overlay networking.
+
+---
+
+# Workload Scheduling
+
+Applications are deployed onto Kubernetes worker nodes.
+
+```text
+Deployment
+
+↓
+
+ReplicaSet
+
+↓
+
+Pods
+
+↓
+
+Worker Nodes
+```
+
+The Kubernetes Scheduler automatically determines which node should run each Pod.
+
+---
+
+# High Availability
+
+Even though this environment is intended for learning, Kubernetes automatically provides several high availability features:
+
+- ReplicaSets recreate failed Pods.
+- Deployments support rolling updates.
+- Nodes are automatically repaired.
+- Failed containers restart automatically.
+- Cluster Autoscaler adds capacity when required.
+
+---
+
+# Cluster Verification Commands
+
+View cluster nodes
+
+```bash
+kubectl get nodes
+```
+
+View node details
+
+```bash
+kubectl describe node <NODE_NAME>
+```
+
+View Pods
+
+```bash
+kubectl get pods
+```
+
+View Deployments
+
+```bash
+kubectl get deployments
+```
+
+View Services
+
+```bash
+kubectl get svc
+```
+
+View Ingress
+
+```bash
+kubectl get ingress
+```
+
+---
+
+# Operational Benefits
+
+Using a private GKE cluster provides:
+
+- Secure Kubernetes environment
+- Internal-only administration
+- Reduced attack surface
+- Managed Kubernetes control plane
+- Automatic node management
+- Automatic upgrades
+- Automatic repairs
+- Native autoscaling
+- Enterprise-ready architecture
+
+---
+
+# Key Takeaways
+
+The private GKE cluster serves as the foundation of the application platform.
+
+Combined with Terraform, GitHub Actions, Helm, Artifact Registry, and Workload Identity Federation, it provides a secure, automated, and production-oriented Kubernetes environment capable of supporting modern cloud-native applications.

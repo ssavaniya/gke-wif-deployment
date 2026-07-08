@@ -1,307 +1,509 @@
 # Project Architecture
 
-## Overview
+## Architecture Overview
 
-This project demonstrates the implementation of a production-style Platform Engineering environment on Google Cloud Platform (GCP). The infrastructure is provisioned using Infrastructure as Code (Terraform), application delivery is automated through GitHub Actions with Workload Identity Federation, and workloads are deployed to a private Google Kubernetes Engine (GKE) cluster.
+This project implements a production-style GitOps CI/CD platform on Google Cloud Platform (GCP). The architecture demonstrates how modern Platform Engineering teams automate infrastructure provisioning, application delivery, container security, and Kubernetes deployments while following cloud security best practices.
 
-The architecture follows cloud-native security principles by eliminating long-lived service account keys, using private networking, and automating deployments through a secure CI/CD pipeline.
+The entire deployment lifecycle is automated using GitHub Actions and Google Workload Identity Federation, eliminating the need for long-lived service account keys.
 
 ---
 
-# High-Level Architecture
+## High-Level Architecture
 
 ```mermaid
-flowchart TB
+flowchart LR
 
-    Developer[Developer]
+Developer[Developer]
 
-    GitHub[GitHub Repository]
+GitHub[GitHub Repository]
 
-    GitHubActions[GitHub Actions]
+Actions[GitHub Actions]
 
-    WIF[Workload Identity Federation]
+WIF[Workload Identity Federation]
 
-    GCP[(Google Cloud)]
+GCP[IAM Service Account]
 
-    ArtifactRegistry[Artifact Registry]
+Build[Maven Build]
 
-    Terraform[Terraform]
+Docker[Docker Build]
 
-    VPC[VPC]
+AR[Artifact Registry]
 
-    Subnet[Private Subnet]
+Scan[Container Vulnerability Scan]
 
-    CloudNAT[Cloud NAT]
+Helm[Helm Deployment]
 
-    GKE[Private GKE Cluster]
+GKE[Private GKE Cluster]
 
-    NodePool[GKE Node Pool]
+Ingress[NGINX Ingress Controller]
 
-    Pods[Application Pods]
+Service[ClusterIP Service]
 
-    Service[LoadBalancer Service]
+Pods[Spring Boot Pods]
 
-    Internet((Internet))
+User[End User]
 
-    Developer --> GitHub
+Developer --> GitHub
 
-    GitHub --> GitHubActions
+GitHub --> Actions
 
-    GitHubActions --> WIF
+Actions --> WIF
 
-    WIF --> GCP
+WIF --> GCP
 
-    GitHubActions --> ArtifactRegistry
+Actions --> Build
 
-    GitHubActions --> GKE
+Build --> Docker
 
-    Terraform --> VPC
-    Terraform --> Subnet
-    Terraform --> CloudNAT
-    Terraform --> GKE
-    Terraform --> ArtifactRegistry
+Docker --> AR
 
-    VPC --> Subnet
+AR --> Scan
 
-    Subnet --> GKE
+Scan --> Helm
 
-    GKE --> NodePool
+Helm --> GKE
 
-    NodePool --> Pods
+GKE --> Ingress
 
-    Pods --> Service
+Ingress --> Service
 
-    Internet --> Service
+Service --> Pods
+
+User --> Ingress
 ```
 
 ---
 
 # Architecture Components
 
-## Google Cloud Platform
+## Developer
 
-Google Cloud Platform hosts the complete platform infrastructure including networking, container orchestration, container registry, IAM, and security services.
+The software development lifecycle begins with a developer making changes to the application source code.
 
-Primary services include:
-
-- Virtual Private Cloud (VPC)
-- Google Kubernetes Engine (GKE)
-- Artifact Registry
-- IAM
-- Workload Identity Federation
-- Cloud NAT
+After validating the changes locally, the developer pushes code to the GitHub repository.
 
 ---
 
-## Infrastructure as Code
+## GitHub Repository
 
-All cloud resources are provisioned using Terraform.
+GitHub serves as the single source of truth for the project.
 
-Terraform manages:
+The repository contains:
 
-- APIs
-- Networking
-- VPC
-- Subnets
-- Firewall rules
-- Cloud Router
-- Cloud NAT
-- Private GKE Cluster
-- Node Pools
-- Artifact Registry
-- IAM resources
+- Spring Boot application
+- Terraform infrastructure
+- Helm chart
+- Kubernetes manifests
+- GitHub Actions workflows
+- Project documentation
 
-This ensures repeatable, version-controlled infrastructure deployments.
-
----
-
-## Networking
-
-The environment uses a custom VPC with private networking.
-
-Key characteristics:
-
-- Custom VPC
-- Private subnet
-- Private Google Access enabled
-- Cloud NAT for outbound internet access
-- No public IPs assigned to worker nodes
-
-This design minimizes the attack surface while allowing secure outbound connectivity.
-
----
-
-## Private GKE Cluster
-
-The Kubernetes cluster is deployed as a private cluster.
-
-Features include:
-
-- Private worker nodes
-- Private control plane
-- Dedicated node pool
-- IP aliasing
-- VPC-native cluster
-- Managed Kubernetes control plane
-
-Applications are deployed onto the node pool through Kubernetes Deployments.
-
----
-
-## Artifact Registry
-
-Container images are stored in Artifact Registry.
-
-Benefits include:
-
-- Secure image storage
-- Versioned container images
-- Native integration with GKE
-- IAM-controlled access
-
-GitHub Actions automatically pushes newly built Docker images after every successful build.
+Every push to the main branch automatically triggers the CI/CD pipeline.
 
 ---
 
 ## GitHub Actions
 
-GitHub Actions provides CI/CD automation.
+GitHub Actions orchestrates the complete deployment pipeline.
 
-Pipeline responsibilities:
+Pipeline responsibilities include:
 
-- Build Java application
-- Build Docker image
-- Push image to Artifact Registry
-- Authenticate to Google Cloud
-- Retrieve GKE credentials
-- Deploy application using kubectl
+- Building the application
+- Running unit tests
+- Performing code quality analysis
+- Building Docker images
+- Publishing container images
+- Performing vulnerability scanning
+- Deploying to GKE
+- Running functional tests
 
 ---
 
 ## Workload Identity Federation
 
-GitHub Actions authenticates to Google Cloud using Workload Identity Federation.
+Instead of storing Google Cloud service account keys inside GitHub Secrets, the pipeline authenticates using OpenID Connect (OIDC).
 
-Advantages:
+Benefits include:
 
-- No service account keys
-- Short-lived credentials
-- OIDC authentication
+- No long-lived credentials
+- Short-lived access tokens
 - Improved security posture
-- Reduced credential management
+- Google-recommended authentication method
+
+Authentication flow:
+
+GitHub Actions
+
+↓
+
+OIDC Token
+
+↓
+
+Workload Identity Federation
+
+↓
+
+Google Service Account
+
+↓
+
+Google Cloud APIs
 
 ---
 
-## Kubernetes Workloads
+## Google Cloud Platform
 
-Application deployment consists of:
+Google Cloud provides the infrastructure platform.
 
-- Deployment
-- ReplicaSet
-- Pods
-- Service
+Services used include:
 
-The Deployment ensures application availability while the Service exposes the application through a cloud load balancer.
+- Google Kubernetes Engine
+- Artifact Registry
+- Cloud Build
+- IAM
+- Compute Engine
+- VPC
+- Cloud Router
+- Cloud NAT
+- Container Analysis
 
 ---
 
-# Deployment Flow
+## Maven Build
 
-```text
-Developer
+The application is compiled using Maven.
 
-      │
+Pipeline tasks include:
 
-      ▼
+- Dependency resolution
+- Unit testing
+- Packaging
+- JAR generation
 
-Push Code to GitHub
+Output:
 
-      │
-
-      ▼
-
-GitHub Actions Pipeline
-
-      │
-
-      ▼
-
-Authenticate using Workload Identity Federation
-
-      │
-
-      ▼
-
-Build Docker Image
-
-      │
-
-      ▼
-
-Push Image to Artifact Registry
-
-      │
-
-      ▼
-
-Connect to Private GKE Cluster
-
-      │
-
-      ▼
-
-Deploy Updated Kubernetes Resources
-
-      │
-
-      ▼
-
-Pods Running Inside GKE
-
-      │
-
-      ▼
-
-Application Accessible via LoadBalancer
+```
+hello-gke.jar
 ```
 
 ---
 
-# Security Highlights
+## Docker Build
 
-The platform incorporates several cloud security best practices:
+The packaged Spring Boot application is converted into a container image.
 
-- Private Kubernetes cluster
-- No long-lived service account keys
+Docker image contains:
+
+- Java Runtime
+- Spring Boot application
+- Runtime dependencies
+
+---
+
+## Artifact Registry
+
+Docker images are stored securely inside Google Artifact Registry.
+
+Each deployment generates a unique image tag based on the Git commit SHA.
+
+Example:
+
+```
+hello-gke:3ab91df
+```
+
+Artifact Registry serves as the central image repository for Kubernetes deployments.
+
+---
+
+## Container Vulnerability Scanning
+
+Every container image is automatically scanned before deployment.
+
+The pipeline blocks deployment when:
+
+- Critical vulnerabilities exist
+- High severity vulnerabilities exist
+
+Only secure images are promoted to the Kubernetes cluster.
+
+---
+
+## Helm Deployment
+
+Helm is used as the Kubernetes package manager.
+
+Benefits:
+
+- Parameterized deployments
+- Version control
+- Easy upgrades
+- Easy rollback
+- Environment-specific configuration
+
+Deployment command:
+
+```bash
+helm upgrade --install hello-gke ./helm/hello-gke
+```
+
+---
+
+## Google Kubernetes Engine
+
+The application is deployed to a private Google Kubernetes Engine cluster.
+
+Key characteristics:
+
+- Private nodes
+- Private control plane
+- Managed node pool
+- Workload Identity enabled
+- Cluster Autoscaler enabled
+
+The cluster hosts all application workloads.
+
+---
+
+## Kubernetes Objects
+
+The application deployment consists of several Kubernetes resources.
+
+### Deployment
+
+Manages application rollout and updates.
+
+Responsibilities:
+
+- Replica management
+- Rolling updates
+- Self healing
+
+---
+
+### ReplicaSet
+
+Maintains the desired number of application replicas.
+
+If a Pod fails, ReplicaSet automatically creates a replacement.
+
+---
+
+### Pods
+
+Pods run the Spring Boot application.
+
+Each Pod contains:
+
+- Spring Boot container
+- Application runtime
+- Network identity
+
+---
+
+### ClusterIP Service
+
+The application is exposed internally using a ClusterIP Service.
+
+Responsibilities:
+
+- Internal load balancing
+- Stable service endpoint
+- Pod abstraction
+
+Traffic flow:
+
+```
+Ingress
+
+↓
+
+ClusterIP Service
+
+↓
+
+Pods
+```
+
+---
+
+## NGINX Ingress Controller
+
+NGINX Ingress Controller acts as the external entry point into the Kubernetes cluster.
+
+Responsibilities include:
+
+- HTTP routing
+- Reverse proxy
+- Load balancing
+- SSL termination (future)
+- Path-based routing
+
+Example:
+
+```
+http://Ingress-IP
+
+↓
+
+NGINX
+
+↓
+
+ClusterIP Service
+
+↓
+
+Pods
+```
+
+---
+
+## End User
+
+Users access the deployed application through the public Ingress endpoint.
+
+Example:
+
+```
+http://<Ingress-IP>
+```
+
+Response:
+
+```json
+{
+  "environment":"dev",
+  "message":"Hello from Ingress"
+}
+```
+
+---
+
+# Request Flow
+
+The following diagram illustrates how an HTTP request reaches the application.
+
+```text
+Client
+
+↓
+
+NGINX Ingress
+
+↓
+
+ClusterIP Service
+
+↓
+
+Deployment
+
+↓
+
+ReplicaSet
+
+↓
+
+Pod
+
+↓
+
+Spring Boot Application
+```
+
+---
+
+# CI/CD Flow
+
+The deployment pipeline follows the sequence below.
+
+```text
+Developer
+
+↓
+
+Git Push
+
+↓
+
+GitHub Actions
+
+↓
+
+Authenticate using Workload Identity Federation
+
+↓
+
+Build Application
+
+↓
+
+Run Unit Tests
+
+↓
+
+Build Docker Image
+
+↓
+
+Push to Artifact Registry
+
+↓
+
+Container Vulnerability Scan
+
+↓
+
+Security Gate
+
+↓
+
+Helm Deployment
+
+↓
+
+Rolling Update
+
+↓
+
+Functional Testing
+
+↓
+
+Production Ready Application
+```
+
+---
+
+# Security Architecture
+
+Security has been implemented throughout the platform.
+
+Implemented controls include:
+
 - Workload Identity Federation
-- IAM least privilege access
-- Private Google Access
-- Cloud NAT for controlled outbound connectivity
-- Infrastructure managed as code
-- Version-controlled CI/CD pipeline
+- Private GKE Cluster
+- No service account keys
+- Artifact Registry
+- Automated vulnerability scanning
+- ClusterIP backend services
+- NGINX reverse proxy
+- Security gate before deployment
 
 ---
 
-# Technologies Used
+# Future Enhancements
 
-| Category | Technology |
-|-----------|------------|
-| Cloud Provider | Google Cloud Platform |
-| Infrastructure as Code | Terraform |
-| Container Platform | Google Kubernetes Engine |
-| CI/CD | GitHub Actions |
-| Authentication | Workload Identity Federation |
-| Container Registry | Artifact Registry |
-| Containerization | Docker |
-| Orchestration | Kubernetes |
-| Programming Language | Java |
-| Build Tool | Maven |
-| Version Control | GitHub |
+The platform will continue to evolve with additional production-grade capabilities.
 
----
+Planned improvements include:
 
-# Next Section
-
-The next document explains how the infrastructure is provisioned using Terraform and the rationale behind the Infrastructure as Code design.
-
-➡ **03-terraform-infrastructure.md**
+- TLS/SSL certificates
+- Prometheus monitoring
+- Grafana dashboards
+- Horizontal Pod Autoscaler
+- Service Mesh (Istio)
+- Canary deployments
+- GitOps with ArgoCD
+- Policy enforcement using Gatekeeper
