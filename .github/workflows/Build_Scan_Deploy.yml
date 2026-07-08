@@ -8,12 +8,14 @@ on:
 permissions:
   contents: read
   id-token: write
+  security-events: write
 
 env:
   PROJECT_ID: proserv-task02
   REGION: us-central1
   REPOSITORY: springboot-repo
   IMAGE: hello-gke
+  IMAGE_URI: us-central1-docker.pkg.dev/proserv-task02/springboot-repo/hello-gke
 
 jobs:
   deploy:
@@ -80,61 +82,77 @@ jobs:
           chmod +x mvnw
           ./mvnw package -DskipTests
 
+      - name: Build Docker Image
+        run: |
+          docker build \
+            -t ${{ env.IMAGE_URI }}:${{ github.sha }} .
+
+      - name: Cache Trivy Database
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ runner.os }}
+          restore-keys: |
+            trivy-db-
+
+      - name: Run Trivy Scan (SARIF)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_URI }}:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          scanners: vuln
+        continue-on-error: true
+
+      - name: Upload SARIF Report
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Generate Trivy JSON Report
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_URI }}:${{ github.sha }}
+          format: json
+          output: trivy-report.json
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          scanners: vuln
+
+      - name: Upload Trivy Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-report.json
+
+      - name: Enforce Security Policy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_URI }}:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          scanners: vuln
+          exit-code: "1"
+
       - name: Configure Docker
         run: |
           gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
-      - name: Build Docker Image
-        run: |
-          docker build \
-            -t us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }} .
-
       - name: Push Docker Image
         run: |
-          docker push us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}
-
-      - name: Wait for Vulnerability Scan
-        run: sleep 60
-
-      - name: Generate Vulnerability Report
-        run: |
-          IMAGE_PATH="us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${{ github.sha }}"
-
-          gcloud artifacts docker images describe \
-            ${IMAGE_PATH} \
-            --show-package-vulnerability \
-            > vulnerability-report.txt
-
-      - name: Upload Vulnerability Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: vulnerability-report
-          path: vulnerability-report.txt
-
-      - name: Enforce Security Policy
-        run: |
-          if grep -q "CRITICAL:" vulnerability-report.txt; then
-            echo "Deployment blocked (CRITICAL)"
-            exit 1
-          fi
-
-          if grep -q "HIGH:" vulnerability-report.txt; then
-            echo "Deployment blocked (HIGH)"
-            exit 1
-          fi
-
-          echo "Security scan passed"
+          docker push ${{ env.IMAGE_URI }}:${{ github.sha }}
 
       - name: Deploy using Helm
         run: |
           helm upgrade --install hello-gke ./helm/hello-gke \
-            --set image.repository=us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE} \
+            --set image.repository=${{ env.IMAGE_URI }} \
             --set image.tag=${{ github.sha }}
 
       - name: Wait for Rollout
         run: |
           kubectl rollout status deployment/hello-gke
-
 
       - name: Port Forward
         run: |
@@ -144,16 +162,15 @@ jobs:
       - name: Set BASE_URL
         run: |
           echo "BASE_URL=localhost:8080" >> $GITHUB_ENV
-    
 
       - name: Functional Test
         run: |
           docker run --rm \
-          --network host \
-          -v ${{ github.workspace }}/tests:/etc/newman \
-          postman/newman \
-          run /etc/newman/hello-gke-functional.postman_collection.json \
-          --env-var baseUrl=http://${BASE_URL}
+            --network host \
+            -v ${{ github.workspace }}/tests:/etc/newman \
+            postman/newman \
+            run /etc/newman/hello-gke-functional.postman_collection.json \
+            --env-var baseUrl=http://${BASE_URL}
 
       - name: Verify Deployment
         run: |
@@ -167,6 +184,6 @@ jobs:
           echo "Cleaning Docker..."
           docker system prune -af
 
-          echo "Cleaning temporary reports..."
-          rm -f vulnerability-report.txt
-
+          echo "Cleaning Trivy reports..."
+          rm -f trivy-results.sarif
+          rm -f trivy-report.json
