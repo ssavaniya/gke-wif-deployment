@@ -154,10 +154,34 @@ jobs:
         run: |
           kubectl rollout status deployment/hello-gke
 
+      - name: Show Deployment
+        run: |
+          kubectl describe deployment hello-gke
+
+      - name: Debug Deployment
+        run: |
+          echo "===== Pods ====="
+          kubectl get pods -o wide
+
+          echo ""
+          echo "===== Service ====="
+          kubectl get svc
+
+          echo ""
+          echo "===== Endpoints ====="
+          kubectl get endpoints
+
+          echo ""
+          echo "===== Describe Service ====="
+          kubectl describe svc hello-gke
+
       - name: Port Forward
         run: |
           kubectl port-forward svc/hello-gke 8080:80 >/tmp/pf.log 2>&1 &
           sleep 15
+
+          echo "===== Port Forward Log ====="
+          cat /tmp/pf.log
 
       - name: Set BASE_URL
         run: |
