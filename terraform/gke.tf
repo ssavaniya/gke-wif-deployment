@@ -82,19 +82,19 @@ resource "google_container_node_pool" "primary_nodes" {
   }
 
   node_config {
-  machine_type = "e2-medium"
+    machine_type = "e2-medium"
 
-  disk_size_gb = 100
-  disk_type    = "pd-balanced"
+    disk_size_gb = 100
+    disk_type    = "pd-balanced"
 
-  image_type = "COS_CONTAINERD"
+    image_type = "COS_CONTAINERD"
 
-  preemptible = true
+    preemptible = true
 
-  oauth_scopes = [
-    "https://www.googleapis.com/auth/cloud-platform"
-  ]
-}
+    oauth_scopes = [
+      "https://www.googleapis.com/auth/cloud-platform"
+    ]
+  }
 
 
 }

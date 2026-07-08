@@ -20,9 +20,9 @@ resource "google_compute_instance" "my-tf-instance" {
     "self-hosted-vm",
     "iap-ssh"
   ]
-lifecycle {
-  ignore_changes = [
-    metadata
-  ]
-}
+  lifecycle {
+    ignore_changes = [
+      metadata
+    ]
+  }
 }
