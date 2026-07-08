@@ -96,7 +96,7 @@ jobs:
             trivy-db-
 
       - name: Run Trivy Scan (SARIF)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_URI }}:${{ github.sha }}
           format: sarif
@@ -112,7 +112,7 @@ jobs:
           sarif_file: trivy-results.sarif
 
       - name: Generate Trivy JSON Report
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_URI }}:${{ github.sha }}
           format: json
@@ -128,7 +128,7 @@ jobs:
           path: trivy-report.json
 
       - name: Enforce Security Policy
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_URI }}:${{ github.sha }}
           severity: HIGH,CRITICAL
