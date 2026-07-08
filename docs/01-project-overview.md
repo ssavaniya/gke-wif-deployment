@@ -1,4 +1,4 @@
-i# End-to-End GitOps CI/CD Platform on Google Kubernetes Engine (GKE)
+# End-to-End GitOps CI/CD Platform on Google Kubernetes Engine (GKE)
 
 ## Project Overview
 
