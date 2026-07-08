@@ -183,6 +183,10 @@ jobs:
           echo "===== Port Forward Log ====="
           cat /tmp/pf.log
 
+      - name: Verify Application Manually
+        run: |
+          curl -v http://localhost:8080
+
       - name: Set BASE_URL
         run: |
           echo "BASE_URL=localhost:8080" >> $GITHUB_ENV
