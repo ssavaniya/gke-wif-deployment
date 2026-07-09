@@ -178,7 +178,7 @@ jobs:
       - name: Port Forward
         run: |
           kubectl port-forward svc/hello-gke 8080:80 >/tmp/pf.log 2>&1 &
-          sleep 15
+          sleep 30
 
           echo "===== Port Forward Log ====="
           cat /tmp/pf.log
