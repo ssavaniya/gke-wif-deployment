@@ -12,9 +12,18 @@ service:
 
 ingress:
   enabled: true
-  className: ""
+  className: nginx
+
+  host: hello-gke.136.65.71.135.sslip.io
+
   path: /
   pathType: Prefix
+
+  clusterIssuer: letsencrypt-prod
+
+  tls:
+    enabled: true
+    secretName: hello-gke-tls
 
 resources:
   requests:
