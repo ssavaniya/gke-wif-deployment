@@ -183,6 +183,20 @@ jobs:
           echo "===== Port Forward Log ====="
           cat /tmp/pf.log
 
+      - name: Verify Port Forward
+        run: |
+          ps -ef | grep port-forward
+
+          echo "===== Listening Ports ====="
+          ss -lntp | grep 8080 || true
+
+          echo "===== Curl ====="
+          curl -v http://localhost:8080/
+
+          echo "===== Port Forward Log ====="
+          cat /tmp/pf.log
+
+
       - name: Verify Application Manually
         run: |
           curl -v http://localhost:8080
