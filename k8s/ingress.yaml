@@ -10,11 +10,11 @@ spec:
 
   tls:
     - hosts:
-        - hello-gke.136.65.71.135.sslip.io
+        - app.devopswithsachin.in
       secretName: hello-gke-tls
 
   rules:
-    - host: hello-gke.136.65.71.135.sslip.io
+    - host: app.devopswithsachin.in
       http:
         paths:
           - path: /

@@ -14,7 +14,7 @@ ingress:
   enabled: true
   className: nginx
 
-  host: hello-gke.136.65.71.135.sslip.io
+  host: app.devopswithsachin.in
 
   path: /
   pathType: Prefix
@@ -24,12 +24,3 @@ ingress:
   tls:
     enabled: true
     secretName: hello-gke-tls
-
-resources:
-  requests:
-    cpu: 100m
-    memory: 256Mi
-
-  limits:
-    cpu: 500m
-    memory: 512Mi
