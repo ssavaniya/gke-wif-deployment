@@ -2,13 +2,13 @@
 
 ## Architecture Overview
 
-This project implements a production-style GitOps CI/CD platform on Google Cloud Platform (GCP). The architecture demonstrates how modern Platform Engineering teams automate infrastructure provisioning, application delivery, container security, and Kubernetes deployments while following cloud security best practices.
+This project implements a production-style Platform Engineering environment on Google Cloud Platform (GCP). It demonstrates how modern DevOps teams automate infrastructure provisioning, application delivery, container security, Kubernetes deployments, DNS management, HTTPS certificate provisioning, and platform monitoring while following cloud security best practices.
 
-The entire deployment lifecycle is automated using GitHub Actions and Google Workload Identity Federation, eliminating the need for long-lived service account keys.
+The platform is fully automated using Terraform, GitHub Actions, Workload Identity Federation (OIDC), Helm, and a Private Google Kubernetes Engine (GKE) cluster. Applications are securely exposed through a custom domain using Cloud DNS, NGINX Ingress Controller, cert-manager, and Let's Encrypt.
 
 ---
 
-## High-Level Architecture
+# High-Level Architecture
 
 ```mermaid
 flowchart LR
@@ -21,25 +21,33 @@ Actions[GitHub Actions]
 
 WIF[Workload Identity Federation]
 
-GCP[IAM Service Account]
+IAM[Google IAM]
 
 Build[Maven Build]
 
 Docker[Docker Build]
 
-AR[Artifact Registry]
+Registry[Artifact Registry]
 
-Scan[Container Vulnerability Scan]
+Trivy[Trivy Image Scan]
 
 Helm[Helm Deployment]
 
 GKE[Private GKE Cluster]
 
-Ingress[NGINX Ingress Controller]
+Ingress[NGINX Ingress]
 
-Service[ClusterIP Service]
+CertManager[cert-manager]
 
-Pods[Spring Boot Pods]
+LetsEncrypt[Let's Encrypt]
+
+DNS[Cloud DNS]
+
+App[Spring Boot Application]
+
+Prometheus[Prometheus]
+
+Grafana[Grafana]
 
 User[End User]
 
@@ -49,27 +57,35 @@ GitHub --> Actions
 
 Actions --> WIF
 
-WIF --> GCP
+WIF --> IAM
 
 Actions --> Build
 
 Build --> Docker
 
-Docker --> AR
+Docker --> Registry
 
-AR --> Scan
+Registry --> Trivy
 
-Scan --> Helm
+Trivy --> Helm
 
 Helm --> GKE
 
 GKE --> Ingress
 
-Ingress --> Service
+Ingress --> App
 
-Service --> Pods
+Ingress --> CertManager
 
-User --> Ingress
+CertManager --> LetsEncrypt
+
+DNS --> Ingress
+
+Prometheus --> Grafana
+
+GKE --> Prometheus
+
+User --> DNS
 ```
 
 ---
@@ -103,33 +119,29 @@ Every push to the main branch automatically triggers the CI/CD pipeline.
 
 ## GitHub Actions
 
-GitHub Actions orchestrates the complete deployment pipeline.
+GitHub Actions orchestrates the complete CI/CD pipeline.
 
-Pipeline responsibilities include:
+Responsibilities include:
 
 - Building the application
 - Running unit tests
-- Performing code quality analysis
 - Building Docker images
-- Publishing container images
-- Performing vulnerability scanning
-- Deploying to GKE
+- Publishing images to Artifact Registry
+- Running Trivy vulnerability scans
+- Deploying applications using Helm
 - Running functional tests
 
 ---
 
 ## Workload Identity Federation
 
-Instead of storing Google Cloud service account keys inside GitHub Secrets, the pipeline authenticates using OpenID Connect (OIDC).
-
-Benefits include:
-
-- No long-lived credentials
-- Short-lived access tokens
-- Improved security posture
-- Google-recommended authentication method
+Instead of storing Google Cloud service account keys inside GitHub Secrets, GitHub Actions authenticates using OpenID Connect (OIDC).
 
 Authentication flow:
+
+Developer
+
+↓
 
 GitHub Actions
 
@@ -149,23 +161,29 @@ Google Service Account
 
 Google Cloud APIs
 
+Benefits:
+
+- No long-lived credentials
+- Short-lived access tokens
+- Improved security posture
+- Google recommended authentication method
+
 ---
 
 ## Google Cloud Platform
 
-Google Cloud provides the infrastructure platform.
+Google Cloud provides the complete infrastructure platform.
 
 Services used include:
 
-- Google Kubernetes Engine
-- Artifact Registry
-- Cloud Build
-- IAM
+- Google Kubernetes Engine (Private Cluster)
 - Compute Engine
-- VPC
+- Artifact Registry
+- IAM
+- Cloud DNS
+- Virtual Private Cloud (VPC)
 - Cloud Router
 - Cloud NAT
-- Container Analysis
 
 ---
 
@@ -173,7 +191,7 @@ Services used include:
 
 The application is compiled using Maven.
 
-Pipeline tasks include:
+Pipeline stages include:
 
 - Dependency resolution
 - Unit testing
@@ -182,7 +200,7 @@ Pipeline tasks include:
 
 Output:
 
-```
+```text
 hello-gke.jar
 ```
 
@@ -190,9 +208,9 @@ hello-gke.jar
 
 ## Docker Build
 
-The packaged Spring Boot application is converted into a container image.
+The packaged Spring Boot application is converted into a Docker image.
 
-Docker image contains:
+The container image includes:
 
 - Java Runtime
 - Spring Boot application
@@ -202,44 +220,42 @@ Docker image contains:
 
 ## Artifact Registry
 
-Docker images are stored securely inside Google Artifact Registry.
+Artifact Registry stores container images securely.
 
 Each deployment generates a unique image tag based on the Git commit SHA.
 
 Example:
 
-```
+```text
 hello-gke:3ab91df
 ```
 
-Artifact Registry serves as the central image repository for Kubernetes deployments.
-
 ---
 
-## Container Vulnerability Scanning
+## Container Security
 
-Every container image is automatically scanned before deployment.
+Every Docker image is scanned using Trivy before deployment.
 
-The pipeline blocks deployment when:
+The deployment pipeline blocks releases if:
 
 - Critical vulnerabilities exist
-- High severity vulnerabilities exist
+- High vulnerabilities exceed the configured threshold
 
-Only secure images are promoted to the Kubernetes cluster.
+This prevents vulnerable container images from reaching the Kubernetes cluster.
 
 ---
 
-## Helm Deployment
+## Helm
 
 Helm is used as the Kubernetes package manager.
 
-Benefits:
+Benefits include:
 
-- Parameterized deployments
-- Version control
+- Versioned deployments
+- Parameterized configuration
 - Easy upgrades
-- Easy rollback
-- Environment-specific configuration
+- Rollbacks
+- Reusable charts
 
 Deployment command:
 
@@ -249,55 +265,44 @@ helm upgrade --install hello-gke ./helm/hello-gke
 
 ---
 
-## Google Kubernetes Engine
+## Private Google Kubernetes Engine
 
-The application is deployed to a private Google Kubernetes Engine cluster.
+Applications run inside a private Google Kubernetes Engine cluster.
 
-Key characteristics:
+Platform features include:
 
 - Private nodes
 - Private control plane
-- Managed node pool
-- Workload Identity enabled
-- Cluster Autoscaler enabled
-
-The cluster hosts all application workloads.
+- Managed node pools
+- Workload Identity
+- Cluster Autoscaler
+- Private networking
 
 ---
 
-## Kubernetes Objects
+## Kubernetes Resources
 
-The application deployment consists of several Kubernetes resources.
+The application deployment consists of the following resources.
 
 ### Deployment
 
-Manages application rollout and updates.
+Responsible for:
 
-Responsibilities:
-
-- Replica management
 - Rolling updates
-- Self healing
+- Replica management
+- Self-healing
 
 ---
 
 ### ReplicaSet
 
-Maintains the desired number of application replicas.
-
-If a Pod fails, ReplicaSet automatically creates a replacement.
+Ensures the desired number of application replicas remain available.
 
 ---
 
 ### Pods
 
-Pods run the Spring Boot application.
-
-Each Pod contains:
-
-- Spring Boot container
-- Application runtime
-- Network identity
+Pods host the Spring Boot application containers.
 
 ---
 
@@ -305,7 +310,7 @@ Each Pod contains:
 
 The application is exposed internally using a ClusterIP Service.
 
-Responsibilities:
+Responsibilities include:
 
 - Internal load balancing
 - Stable service endpoint
@@ -313,7 +318,6 @@ Responsibilities:
 
 Traffic flow:
 
-```
 Ingress
 
 ↓
@@ -323,73 +327,125 @@ ClusterIP Service
 ↓
 
 Pods
-```
 
 ---
 
 ## NGINX Ingress Controller
 
-NGINX Ingress Controller acts as the external entry point into the Kubernetes cluster.
+The NGINX Ingress Controller exposes applications to the internet.
 
 Responsibilities include:
 
 - HTTP routing
+- HTTPS routing
 - Reverse proxy
 - Load balancing
-- SSL termination (future)
+- TLS termination
+- Host-based routing
 - Path-based routing
 
-Example:
+Applications are exposed using a single external Load Balancer.
 
-```
-http://Ingress-IP
+---
 
-↓
+## Cloud DNS
 
-NGINX
+Cloud DNS hosts the public DNS zone.
 
-↓
+Configured records include:
 
-ClusterIP Service
+- app.devopswithsachin.in
+- grafana.devopswithsachin.in
 
-↓
+These records point to the external IP address of the NGINX Ingress Controller.
 
-Pods
-```
+---
+
+## cert-manager
+
+cert-manager automates TLS certificate management.
+
+Responsibilities include:
+
+- Requesting certificates
+- Renewing certificates automatically
+- Managing Kubernetes TLS Secrets
+
+Certificates are issued automatically from Let's Encrypt.
+
+---
+
+## Let's Encrypt
+
+Let's Encrypt provides trusted SSL/TLS certificates for all public applications.
+
+Benefits include:
+
+- Free certificates
+- Automatic renewal
+- Trusted by all major browsers
+
+---
+
+## Prometheus
+
+Prometheus collects metrics from Kubernetes workloads.
+
+It monitors:
+
+- Cluster health
+- Node metrics
+- Pod metrics
+- Application metrics
+
+---
+
+## Grafana
+
+Grafana visualizes metrics collected by Prometheus.
+
+Dashboards provide visibility into:
+
+- Kubernetes cluster
+- Node utilization
+- Application performance
+- Resource consumption
 
 ---
 
 ## End User
 
-Users access the deployed application through the public Ingress endpoint.
+Users access applications securely using HTTPS.
 
-Example:
+Examples:
 
-```
-http://<Ingress-IP>
-```
-
-Response:
-
-```json
-{
-  "environment":"dev",
-  "message":"Hello from Ingress"
-}
-```
+- https://app.devopswithsachin.in
+- https://grafana.devopswithsachin.in
 
 ---
 
 # Request Flow
 
-The following diagram illustrates how an HTTP request reaches the application.
+The following diagram illustrates how requests reach the application.
 
 ```text
 Client
 
 ↓
 
-NGINX Ingress
+Cloud DNS
+
+↓
+
+Google Cloud Load Balancer
+
+↓
+
+NGINX Ingress Controller
+
+↓
+
+TLS Termination
 
 ↓
 
@@ -451,7 +507,7 @@ Push to Artifact Registry
 
 ↓
 
-Container Vulnerability Scan
+Run Trivy Scan
 
 ↓
 
@@ -471,7 +527,7 @@ Functional Testing
 
 ↓
 
-Production Ready Application
+Application Available via HTTPS
 ```
 
 ---
@@ -482,28 +538,34 @@ Security has been implemented throughout the platform.
 
 Implemented controls include:
 
-- Workload Identity Federation
 - Private GKE Cluster
-- No service account keys
+- Private Nodes
+- Workload Identity Federation
+- No long-lived service account keys
 - Artifact Registry
-- Automated vulnerability scanning
+- Trivy vulnerability scanning
 - ClusterIP backend services
-- NGINX reverse proxy
-- Security gate before deployment
+- NGINX Ingress Controller
+- Automatic TLS certificates
+- HTTPS enforcement
+- Security gates before deployment
 
 ---
 
 # Future Enhancements
 
-The platform will continue to evolve with additional production-grade capabilities.
+The platform will continue evolving with additional production-grade capabilities.
 
 Planned improvements include:
 
-- TLS/SSL certificates
-- Prometheus monitoring
-- Grafana dashboards
-- Horizontal Pod Autoscaler
+- Argo CD GitOps
+- Horizontal Pod Autoscaler (HPA)
+- KEDA
 - Service Mesh (Istio)
+- Blue/Green deployments
 - Canary deployments
-- GitOps with ArgoCD
-- Policy enforcement using Gatekeeper
+- Loki for centralized logging
+- OpenTelemetry
+- Gatekeeper / Kyverno
+- External Secrets Operator
+- Multi-environment deployments

@@ -2,24 +2,32 @@
 
 ## Overview
 
-The application is deployed on a **Private Google Kubernetes Engine (GKE)** cluster.
+The application platform is hosted on a **Private Google Kubernetes Engine (GKE)** cluster running in Google Cloud Platform.
 
-Unlike a public Kubernetes cluster, a private GKE cluster restricts access to both the worker nodes and the Kubernetes control plane, significantly improving security.
+Unlike a public Kubernetes cluster, both the Kubernetes worker nodes and the control plane remain private inside a custom VPC. Only authorized resources inside the VPC can communicate with the cluster, providing a secure and production-like environment.
 
-This architecture closely resembles production environments used by enterprise organizations.
+The cluster hosts multiple workloads including:
+
+- Spring Boot application
+- NGINX Ingress Controller
+- cert-manager
+- Grafana
+- Monitoring components
+
+The infrastructure closely resembles how modern Platform Engineering teams deploy workloads in production.
 
 ---
 
-# Why a Private Cluster?
+# Why a Private GKE Cluster?
 
-A public Kubernetes cluster exposes worker nodes or the Kubernetes API server to the internet.
+Public Kubernetes clusters expose worker nodes or the Kubernetes API server to the internet.
 
-A private cluster keeps both inside the Virtual Private Cloud (VPC), allowing access only from authorized internal networks.
+A private cluster keeps all critical components inside the VPC while allowing only controlled access from trusted networks.
 
 Benefits include:
 
 - Reduced attack surface
-- Improved network security
+- Improved security posture
 - Internal-only cluster administration
 - Better compliance with enterprise security standards
 - Secure communication between workloads
@@ -29,47 +37,49 @@ Benefits include:
 # Cluster Architecture
 
 ```text
-                    Internet
-                        │
-                        │
-               Cloud NAT (Outbound Only)
-                        │
-────────────────────────────────────────────────────
-
-                Google Cloud VPC
-
-        ┌─────────────────────────────┐
-        │                             │
-        │   Bastion VM                │
-        │        │                    │
-        │        │ kubectl            │
-        │        ▼                    │
-        │  Private GKE Control Plane  │
-        │             │               │
-        │             ▼               │
-        │        Worker Nodes         │
-        │             │               │
-        │             ▼               │
-        │          Kubernetes Pods    │
-        │                             │
-        └─────────────────────────────┘
+                           Internet
+                               │
+                               │
+                     HTTPS (443)
+                               │
+                      External Load Balancer
+                               │
+                     NGINX Ingress Controller
+                               │
+                    ┌──────────┴──────────┐
+                    │                     │
+              Spring Boot App       Grafana
+                    │                     │
+              ClusterIP Service    ClusterIP Service
+                    │                     │
+                   Pods                 Pods
+                    │
+            Google Kubernetes Engine
+                    │
+           Private Worker Nodes
+                    │
+          Private Control Plane
+                    │
+              Bastion VM (kubectl)
+                    │
+                 Cloud NAT
+                    │
+                 Internet
 ```
 
 ---
 
 # Cluster Configuration
 
-The cluster was created with the following characteristics:
-
 | Feature | Configuration |
 |----------|---------------|
 | Cluster Type | Private GKE |
 | Region | us-central1 |
-| Node Location | us-central1-a |
-| Kubernetes Version | Current Stable Release |
-| Image Type | COS Containerd |
+| Zone | us-central1-a |
 | Networking | VPC Native |
-| Pod Networking | Alias IP |
+| Node Image | COS Containerd |
+| Private Nodes | Enabled |
+| Private Control Plane | Enabled |
 | Workload Identity | Enabled |
 | Shielded Nodes | Enabled |
 
@@ -77,15 +87,20 @@ The cluster was created with the following characteristics:
 
 # Private Nodes
 
-Worker nodes are created **without public IP addresses**.
+Worker nodes are provisioned without public IP addresses.
 
-Because of this:
+This ensures:
 
 - Nodes cannot be accessed directly from the internet.
-- External systems cannot SSH into the nodes.
-- All cluster administration occurs from resources inside the VPC.
+- SSH access to nodes is not exposed publicly.
+- All outbound internet access occurs through Cloud NAT.
 
-Outbound internet access is provided through Cloud NAT.
+Typical outbound traffic includes:
+
+- Pulling container images
+- Downloading package updates
+- Accessing Google APIs
+- Communicating with Artifact Registry
 
 ---
 
@@ -93,37 +108,26 @@ Outbound internet access is provided through Cloud NAT.
 
 The Kubernetes API server is also private.
 
-This means:
+Only trusted resources inside the VPC can communicate with the cluster.
 
-- kubectl cannot connect from arbitrary networks.
-- Only trusted internal networks may communicate with the control plane.
-- Cloud Shell cannot directly manage the cluster.
+For this project, cluster administration is performed from a Compute Engine virtual machine (Bastion VM) located in the same VPC.
 
-For this project, a Compute Engine VM inside the VPC acts as the administration host.
+Common administrative tasks include:
 
----
-
-# Cluster Administration
-
-The Bastion VM is responsible for managing the Kubernetes cluster.
-
-Typical administrative tasks include:
-
-- Running kubectl
-- Installing Helm charts
+- kubectl
+- Helm deployments
+- Troubleshooting
 - Viewing logs
-- Managing deployments
-- Troubleshooting workloads
+- Installing Kubernetes components
 
 Example:
 
 ```bash
 gcloud container clusters get-credentials my-tf-cluster \
-    --zone us-central1-a \
-    --project proserv-task02
+  --zone us-central1-a
 ```
 
-Verify cluster connectivity:
+Verify connectivity:
 
 ```bash
 kubectl get nodes
@@ -131,44 +135,42 @@ kubectl get nodes
 
 ---
 
-# Node Pool
+# Managed Node Pool
 
 The cluster uses a dedicated managed node pool.
 
-Configuration:
+Configuration includes:
 
-- Machine Type: e2-medium
+- e2-medium machine type
 - Spot Virtual Machines
-- Container-Optimized OS
-- Auto Repair enabled
-- Auto Upgrade enabled
+- Auto Repair
+- Auto Upgrade
+- Workload Metadata enabled
 
-Managed node pools simplify lifecycle management by allowing Google Kubernetes Engine to handle node maintenance automatically.
+Using managed node pools allows Google Kubernetes Engine to automatically maintain worker nodes.
 
 ---
 
 # Spot Virtual Machines
 
-The worker nodes use **Spot Virtual Machines**.
+Worker nodes are created using Spot Virtual Machines to reduce infrastructure costs.
 
 Advantages:
 
-- Significantly lower cost
-- Suitable for development and testing
-- Managed automatically by GKE
+- Lower compute cost
+- Ideal for learning environments
+- Fully managed by GKE
 
 Trade-offs:
 
-- Nodes may be reclaimed by Google Cloud.
-- Applications should be resilient to node termination.
-
-For production workloads, organizations often combine Spot nodes with regular nodes.
+- Nodes can be reclaimed by Google Cloud.
+- Workloads should tolerate interruptions.
 
 ---
 
 # Cluster Autoscaler
 
-Cluster Autoscaler is enabled.
+Cluster Autoscaler automatically adjusts the number of worker nodes based on workload demand.
 
 Configuration:
 
@@ -176,35 +178,11 @@ Configuration:
 |---------------|---------------|
 | 1 | 3 |
 
-When workload demand increases:
+Benefits include:
 
-```text
-More Pods
-
-↓
-
-Insufficient Capacity
-
-↓
-
-Cluster Autoscaler
-
-↓
-
-New Worker Node
-
-↓
-
-Pods Scheduled
-```
-
-When workloads decrease, unused nodes are removed automatically.
-
-Benefits:
-
+- Automatic scaling
+- Improved resource utilization
 - Cost optimization
-- Improved scalability
-- Efficient resource utilization
 
 ---
 
@@ -212,45 +190,71 @@ Benefits:
 
 Workload Identity is enabled on the cluster.
 
-Rather than storing long-lived service account keys inside Kubernetes, workloads receive temporary credentials from Google Cloud IAM.
+Instead of storing Google Cloud service account keys inside Kubernetes, workloads authenticate securely using Google IAM.
 
 Benefits:
 
-- No service account keys
+- No long-lived credentials
+- Temporary access tokens
 - Improved security
-- IAM integration
-- Short-lived credentials
-- Recommended by Google
+- Native IAM integration
 
-Workload Identity is also used by GitHub Actions through Workload Identity Federation.
+GitHub Actions also authenticates using **Workload Identity Federation**, eliminating the need for JSON service account keys.
 
 ---
 
 # Kubernetes Networking
 
-The cluster uses **VPC-native networking**.
+The cluster uses VPC-native networking with Alias IP ranges.
 
-Separate IP ranges are allocated for:
+Separate CIDR ranges are allocated for:
 
 - Nodes
 - Pods
 - Services
 
-This provides:
+Benefits include:
 
 - Better scalability
+- Native Google Cloud networking
 - Simplified routing
 - Improved network isolation
 
-Traffic flows internally without requiring overlay networking.
+---
+
+# Ingress and External Access
+
+External traffic enters the cluster through the NGINX Ingress Controller.
+
+Ingress provides:
+
+- Host-based routing
+- TLS termination
+- Reverse proxy
+- Load balancing
+
+Current public endpoints include:
+
+| Application | URL |
+|-------------|-------------------------------------------|
+| Spring Boot Application | https://app.devopswithsachin.in |
+| Grafana Dashboard | https://grafana.devopswithsachin.in |
+
+TLS certificates are automatically issued and renewed using **cert-manager** with **Let's Encrypt**.
 
 ---
 
-# Workload Scheduling
+# Application Deployment Flow
 
-Applications are deployed onto Kubernetes worker nodes.
+Applications are deployed using Helm.
+
+Deployment hierarchy:
 
 ```text
+Helm
+
+↓
+
 Deployment
 
 ↓
@@ -263,83 +267,101 @@ Pods
 
 ↓
 
-Worker Nodes
+ClusterIP Service
+
+↓
+
+NGINX Ingress
+
+↓
+
+Users
 ```
 
-The Kubernetes Scheduler automatically determines which node should run each Pod.
+Kubernetes automatically performs rolling updates with zero manual intervention.
 
 ---
 
-# High Availability
+# High Availability Features
 
-Even though this environment is intended for learning, Kubernetes automatically provides several high availability features:
+Although this project is intended for learning, several production-grade Kubernetes capabilities are enabled:
 
-- ReplicaSets recreate failed Pods.
-- Deployments support rolling updates.
-- Nodes are automatically repaired.
-- Failed containers restart automatically.
-- Cluster Autoscaler adds capacity when required.
+- ReplicaSets recreate failed Pods
+- Rolling Updates
+- Self-healing Pods
+- Managed node upgrades
+- Managed node repairs
+- Cluster Autoscaler
+- Automatic certificate renewal
 
 ---
 
-# Cluster Verification Commands
+# Useful Kubernetes Commands
 
-View cluster nodes
+View nodes
 
 ```bash
 kubectl get nodes
 ```
 
-View node details
-
-```bash
-kubectl describe node <NODE_NAME>
-```
-
 View Pods
 
 ```bash
-kubectl get pods
+kubectl get pods -A
 ```
 
 View Deployments
 
 ```bash
-kubectl get deployments
+kubectl get deployments -A
 ```
 
 View Services
 
 ```bash
-kubectl get svc
+kubectl get svc -A
 ```
 
 View Ingress
 
 ```bash
-kubectl get ingress
+kubectl get ingress -A
+```
+
+View Certificates
+
+```bash
+kubectl get certificate -A
+```
+
+View Ingress Controller
+
+```bash
+kubectl get pods -n ingress-nginx
 ```
 
 ---
 
 # Operational Benefits
 
-Using a private GKE cluster provides:
+This private GKE cluster provides:
 
-- Secure Kubernetes environment
-- Internal-only administration
-- Reduced attack surface
-- Managed Kubernetes control plane
+- Private Kubernetes environment
+- Secure networking
+- Managed control plane
 - Automatic node management
-- Automatic upgrades
-- Automatic repairs
-- Native autoscaling
-- Enterprise-ready architecture
+- Auto Repair
+- Auto Upgrade
+- Cluster Autoscaler
+- Workload Identity
+- HTTPS with Let's Encrypt
+- NGINX Ingress
+- Production-style deployment architecture
 
 ---
 
 # Key Takeaways
 
-The private GKE cluster serves as the foundation of the application platform.
+The private GKE cluster is the core of this platform engineering project.
 
-Combined with Terraform, GitHub Actions, Helm, Artifact Registry, and Workload Identity Federation, it provides a secure, automated, and production-oriented Kubernetes environment capable of supporting modern cloud-native applications.
+Combined with Terraform, GitHub Actions, Helm, Workload Identity Federation, cert-manager, NGINX Ingress, and Let's Encrypt, it delivers a secure, automated, and production-oriented Kubernetes platform suitable for hosting modern cloud-native applications.

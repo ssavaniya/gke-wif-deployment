@@ -1,22 +1,29 @@
-# Ingress Comparison
+# 11 - Ingress Comparison
 
 ## Overview
 
-One of the objectives of this project was to understand how different Kubernetes Ingress implementations work.
+One of the primary learning objectives of this project was to understand how Kubernetes applications are exposed to external users using different Ingress implementations.
 
-Initially, the application was exposed using the default Google Kubernetes Engine (GKE) Ingress Controller.
+The application was initially deployed using the default Google Kubernetes Engine (GKE) Ingress Controller. After understanding Google's managed solution, the project was migrated to the NGINX Ingress Controller to gain hands-on experience with the Ingress solution most commonly used in enterprise Kubernetes environments.
 
-Later, the project was migrated to the NGINX Ingress Controller to better understand third-party ingress solutions commonly used in enterprise Kubernetes environments.
+The final implementation uses:
 
-This document compares both implementations and explains why NGINX Ingress was ultimately selected.
+- NGINX Ingress Controller
+- cert-manager
+- Let's Encrypt
+- Custom domain
+- Automatic TLS certificate renewal
+- HTTPS
+
+This document compares both approaches and explains why NGINX Ingress was selected for the final platform.
 
 ---
 
-# What is Ingress?
+# What is an Ingress?
 
-An Ingress is a Kubernetes resource that manages external HTTP and HTTPS traffic into a cluster.
+An Ingress is a Kubernetes resource that manages external HTTP and HTTPS traffic entering a Kubernetes cluster.
 
-Instead of exposing every application using a dedicated LoadBalancer Service, a single Ingress Controller can route requests to multiple services.
+Instead of exposing every application through its own LoadBalancer Service, a single Ingress Controller can route requests to multiple backend services.
 
 General architecture:
 
@@ -29,7 +36,7 @@ Ingress Controller
 
 ↓
 
-Service
+ClusterIP Service
 
 ↓
 
@@ -38,9 +45,9 @@ Pods
 
 ---
 
-# Why Use Ingress?
+# Why Use an Ingress?
 
-Without Ingress:
+Without an Ingress Controller:
 
 ```text
 Internet
@@ -54,20 +61,20 @@ LoadBalancer Service
 Application
 ```
 
-Every application requires:
+Each application requires:
 
-- Public IP
-- Load Balancer
-- Additional cost
+- Dedicated public IP
+- Dedicated Load Balancer
+- Higher infrastructure cost
 
-With Ingress:
+With an Ingress Controller:
 
 ```text
 Internet
 
 ↓
 
-Ingress
+Ingress Controller
 
 ↓
 
@@ -78,29 +85,31 @@ Multiple Services
 Applications
 ```
 
-Advantages:
+Benefits include:
 
 - Single entry point
-- Path-based routing
 - Host-based routing
-- SSL termination
+- Path-based routing
+- TLS termination
 - Lower infrastructure cost
+- Easier application management
 
 ---
 
 # Google GKE Ingress
 
-The project initially used Google's managed Ingress Controller.
+The project initially used Google's managed GKE Ingress Controller.
 
 Characteristics:
 
-- Managed by Google Cloud
-- Automatically provisions Cloud Load Balancer
-- Integrates with Cloud Armor
+- Fully managed by Google Cloud
+- Automatically provisions a Google Cloud Load Balancer
+- Integrates with Google networking
 - Supports Google-managed SSL certificates
-- Uses Google networking infrastructure
+- Supports Cloud Armor
+- Minimal operational overhead
 
-Application flow:
+Traffic flow:
 
 ```text
 Internet
@@ -124,19 +133,11 @@ Verification:
 kubectl get ingress
 ```
 
-Example:
-
-```
-ADDRESS
-
-136.xxx.xxx.xxx
-```
-
 ---
 
 # Google Ingress Annotations
 
-Google automatically added several annotations to the Ingress resource.
+Google automatically created several annotations.
 
 Examples:
 
@@ -148,51 +149,60 @@ ingress.kubernetes.io/target-proxy
 ingress.kubernetes.io/forwarding-rule
 ```
 
-These annotations reference Google Cloud Load Balancer resources created automatically by the GKE Ingress Controller.
+These annotations reference Google Cloud Load Balancer resources that are automatically provisioned by the managed GKE Ingress Controller.
 
-After migrating away from Google Ingress, these annotations were removed because they were no longer required.
+---
+
+# Why Migrate to NGINX?
+
+Although Google's Ingress is easy to use, most enterprise Kubernetes environments use NGINX Ingress because it provides:
+
+- Cloud independence
+- Greater flexibility
+- Rich configuration options
+- Large community support
+- Consistent behavior across multiple cloud providers
+
+Migrating to NGINX also provided practical experience with Kubernetes-native networking.
 
 ---
 
 # NGINX Ingress Controller
 
-To better understand enterprise Kubernetes networking, the project introduced the NGINX Ingress Controller.
-
-Installation:
-
-```bash
-kubectl apply -f \
-https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
-```
+The project now uses the NGINX Ingress Controller running inside the Kubernetes cluster.
 
 Verification:
 
 ```bash
 kubectl get pods -n ingress-nginx
+```
 
+```bash
 kubectl get svc -n ingress-nginx
+```
 
+```bash
 kubectl get ingressclass
 ```
 
-Example:
+Expected output:
 
 ```
-IngressClass
-
 nginx
 ```
 
+Unlike Google's managed solution, NGINX operates as Kubernetes Pods and is managed like any other workload.
+
 ---
 
-# NGINX Ingress Architecture
+# NGINX Architecture
 
 ```text
 Internet
 
 ↓
 
-NGINX LoadBalancer
+External LoadBalancer
 
 ↓
 
@@ -204,21 +214,19 @@ ClusterIP Service
 
 ↓
 
-Pods
+Spring Boot Pods
 ```
-
-Unlike Google's managed controller, NGINX runs inside Kubernetes as Pods.
 
 ---
 
-# Migrating the Application
+# Application Migration
 
-The application Ingress manifest was updated.
+The application Ingress resource was updated to use the NGINX controller.
 
 Previous configuration:
 
-```
-No IngressClass
+```yaml
+No ingressClassName
 ```
 
 Updated configuration:
@@ -227,53 +235,67 @@ Updated configuration:
 ingressClassName: nginx
 ```
 
-The Ingress resource now uses the NGINX controller instead of the Google-managed controller.
-
 Verification:
 
 ```bash
 kubectl describe ingress hello-gke
 ```
 
-Example:
+Expected output:
 
 ```
-Ingress Class
-
-nginx
+Ingress Class: nginx
 ```
 
 ---
 
-# URL Rewriting
+# HTTPS with cert-manager
 
-NGINX supports request rewriting using annotations.
+The NGINX Ingress Controller is integrated with cert-manager.
+
+cert-manager automatically:
+
+- Requests certificates from Let's Encrypt
+- Stores certificates as Kubernetes TLS Secrets
+- Renews certificates before expiration
+
+The Ingress references the TLS Secret created by cert-manager.
 
 Example:
 
 ```yaml
-nginx.ingress.kubernetes.io/rewrite-target: /
+tls:
+  - hosts:
+      - app.devopswithsachin.in
+    secretName: hello-gke-tls
 ```
-
-This allows incoming requests to be rewritten before reaching the backend service.
 
 ---
 
-# Removing Google-Specific Configuration
+# Custom Domain
 
-After migration, the following annotations were removed:
+The application is now accessible using a custom domain.
 
 ```
-ingress.kubernetes.io/url-map
-
-ingress.kubernetes.io/forwarding-rule
-
-ingress.kubernetes.io/target-proxy
+https://app.devopswithsachin.in
 ```
 
-These annotations are specific to Google's Ingress Controller and are not used by NGINX.
+DNS points the domain to the external IP address of the NGINX Ingress Controller.
 
-The final Ingress configuration only contains application-specific annotations.
+This provides a production-style user experience instead of relying on temporary testing domains such as sslip.io.
+
+---
+
+# Automatic TLS Certificate Renewal
+
+Let's Encrypt certificates are automatically renewed by cert-manager before they expire.
+
+Benefits include:
+
+- No manual certificate management
+- Continuous HTTPS availability
+- Trusted public certificates
+- Reduced operational overhead
 
 ---
 
@@ -283,42 +305,49 @@ The final Ingress configuration only contains application-specific annotations.
 |----------|--------------------|---------------|
 | Managed by | Google Cloud | Kubernetes |
 | Runs Inside Cluster | No | Yes |
-| Cloud Load Balancer | Automatic | Uses LoadBalancer Service |
-| SSL Support | Google Managed Certificates | cert-manager / TLS Secrets |
-| Path Routing | Yes | Yes |
-| Host Routing | Yes | Yes |
+| Cloud Load Balancer | Automatically created | LoadBalancer Service |
+| HTTPS | Google Managed Certificates | cert-manager + Let's Encrypt |
+| Automatic Certificate Renewal | Yes | Yes |
+| Host-based Routing | Yes | Yes |
+| Path-based Routing | Yes | Yes |
 | Custom Configuration | Limited | Extensive |
+| Cloud Independent | No | Yes |
 | Enterprise Adoption | High | Very High |
 
 ---
 
-# Advantages of Google Ingress
+# Advantages of Google GKE Ingress
 
 - Fully managed
-- Deep Google Cloud integration
-- Easy SSL configuration
-- Cloud Armor integration
-- Minimal operational overhead
+- Native Google Cloud integration
+- Automatic Cloud Load Balancer
+- Cloud Armor support
+- Minimal administration
 
 ---
 
 # Advantages of NGINX Ingress
 
-- Vendor independent
+- Cloud agnostic
+- Kubernetes native
 - Highly configurable
 - Supports advanced routing
-- Widely adopted
-- Large community
-- Consistent across cloud providers
+- Large open-source community
+- Works consistently across cloud providers
+- Integrates easily with cert-manager
 
 ---
 
 # Current Implementation
 
-The project now uses:
+The final project uses the following request flow:
 
 ```text
-Internet
+User
+
+↓
+
+https://app.devopswithsachin.in
 
 ↓
 
@@ -330,34 +359,32 @@ ClusterIP Service
 
 ↓
 
-Spring Boot Application
+Spring Boot Pods
 ```
 
-The previous Google-specific annotations have been removed.
-
-Traffic is routed entirely through the NGINX Ingress Controller.
+Application traffic is encrypted using HTTPS and secured with a Let's Encrypt certificate managed automatically by cert-manager.
 
 ---
 
-# Future Enhancements
+# Best Practices Implemented
 
-Planned improvements include:
+This project follows several Ingress best practices:
 
-- HTTPS with TLS
-- cert-manager integration
+- Dedicated Ingress Controller
+- Host-based routing
+- HTTPS enabled
+- Custom domain
 - Automatic certificate renewal
-- Rate limiting
-- Authentication
-- Canary deployments
-- Web Application Firewall
-- Custom domains
+- Kubernetes TLS Secrets
+- ClusterIP backend services
+- Infrastructure independent configuration
 
 ---
 
 # Key Takeaways
 
-Both Google GKE Ingress and NGINX Ingress provide reliable methods for exposing Kubernetes applications.
+Both Google GKE Ingress and the NGINX Ingress Controller provide reliable methods for exposing Kubernetes applications.
 
-Google Ingress offers a fully managed experience tightly integrated with Google Cloud, while NGINX provides greater flexibility, portability, and advanced configuration options.
+Google GKE Ingress offers a fully managed experience tightly integrated with Google Cloud, while NGINX Ingress provides greater flexibility, portability, and advanced configuration options.
 
-By implementing both approaches, this project demonstrates an understanding of managed cloud networking as well as enterprise Kubernetes networking patterns commonly used across multiple cloud providers.
+By implementing both approaches and successfully migrating to NGINX with HTTPS, cert-manager, and a custom domain, this project demonstrates practical experience with production-style Kubernetes networking commonly used in enterprise environments.

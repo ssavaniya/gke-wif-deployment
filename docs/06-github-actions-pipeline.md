@@ -1,77 +1,69 @@
-# GitHub Actions CI/CD Pipeline
+# 06 - GitHub Actions CI/CD Pipeline
 
 ## Overview
 
-GitHub Actions is used to automate the complete Continuous Integration and Continuous Deployment (CI/CD) process for this project.
+GitHub Actions automates the complete Continuous Integration and Continuous Deployment (CI/CD) workflow for this project.
 
-Every change pushed to the **main** branch automatically triggers a deployment pipeline that builds, tests, scans, and deploys the application to Google Kubernetes Engine (GKE).
+Every push to the **main** branch automatically builds, tests, scans, and deploys the application to the private Google Kubernetes Engine (GKE) cluster.
 
-The pipeline follows modern DevSecOps practices by integrating automated testing, vulnerability scanning, and secure authentication before deployment.
+The pipeline authenticates securely using **Google Cloud Workload Identity Federation**, eliminating the need to store long-lived Service Account keys inside GitHub.
+
+The deployment process is fully automated and follows modern DevOps and Platform Engineering practices.
 
 ---
 
 # Pipeline Objectives
 
-The CI/CD pipeline automates the following tasks:
+The pipeline automates the following tasks:
 
 - Source code checkout
-- Google Cloud authentication
-- Maven dependency caching
-- Unit testing
-- Code coverage generation
-- SonarCloud analysis
-- Docker image build
-- Artifact Registry image push
-- Container vulnerability scanning
-- Security policy enforcement
-- Helm deployment
-- Kubernetes rollout verification
-- Functional API testing
-- Environment cleanup
+- Authenticate with Google Cloud
+- Build the Spring Boot application
+- Execute unit tests
+- Build Docker image
+- Push image to Artifact Registry
+- Perform Trivy vulnerability scan
+- Deploy application using Helm
+- Verify Kubernetes rollout
+- Perform functional API testing
 
 ---
 
-# High-Level Pipeline Flow
+# Pipeline Architecture
 
 ```mermaid
 flowchart TD
 
-A[Developer Push] --> B[GitHub Actions]
+A[Developer Push] --> B[GitHub Repository]
 
-B --> C[Checkout Source]
+B --> C[GitHub Actions]
 
-C --> D[Authenticate to GCP]
+C --> D[Authenticate using Workload Identity Federation]
 
-D --> E[Get GKE Credentials]
+D --> E[Build Spring Boot Application]
 
 E --> F[Run Unit Tests]
 
-F --> G[SonarCloud Analysis]
+F --> G[Build Docker Image]
 
-G --> H[Build Docker Image]
+G --> H[Push to Artifact Registry]
 
-H --> I[Push Artifact Registry]
+H --> I[Trivy Security Scan]
 
-I --> J[Vulnerability Scan]
+I --> J[Deploy with Helm]
 
-J --> K{Security Check}
+J --> K[Verify Rollout]
 
-K -->|PASS| L[Deploy with Helm]
+K --> L[Functional Testing]
 
-K -->|FAIL| X[Pipeline Stops]
-
-L --> M[Verify Rollout]
-
-M --> N[Functional Tests]
-
-N --> O[Cleanup]
+L --> M[Application Available via HTTPS]
 ```
 
 ---
 
 # Workflow Trigger
 
-The workflow is configured to execute whenever code is pushed to the **main** branch.
+The workflow executes automatically whenever code is pushed to the **main** branch.
 
 ```yaml
 on:
@@ -80,7 +72,7 @@ on:
       - main
 ```
 
-This enables fully automated deployments without manual intervention.
+This enables continuous deployment without manual intervention.
 
 ---
 
@@ -88,263 +80,169 @@ This enables fully automated deployments without manual intervention.
 
 ## 1. Checkout Source Code
 
-The first stage downloads the latest application source code from GitHub.
+The workflow downloads the latest version of the repository.
 
 ```yaml
 uses: actions/checkout@v4
 ```
 
-Purpose:
+This provides access to:
 
-- Retrieve project files
-- Access Helm chart
-- Access Terraform
-- Access Kubernetes manifests
+- Spring Boot source code
+- Helm chart
+- Kubernetes manifests
+- Documentation
 
 ---
 
-## 2. Authenticate to Google Cloud
+## 2. Authenticate with Google Cloud
 
-Authentication is performed using Workload Identity Federation.
+Authentication is performed using Google's official GitHub Action.
 
 ```yaml
-google-github-actions/auth
+uses: google-github-actions/auth@v2
 ```
 
-Benefits:
+Authentication uses:
 
-- No service account keys
-- Temporary credentials
-- Secure authentication
-- IAM integration
+- GitHub OIDC
+- Workload Identity Federation
+- Temporary Google Cloud credentials
+
+No Service Account JSON keys are stored in GitHub.
 
 ---
 
 ## 3. Configure Google Cloud SDK
 
-The Google Cloud SDK is installed along with the Kubernetes authentication plugin.
+The workflow installs the Google Cloud SDK and Kubernetes authentication plugin.
 
-Purpose:
+This allows GitHub Actions to execute commands such as:
 
-- gcloud commands
-- kubectl authentication
-- Artifact Registry access
+```bash
+gcloud
+kubectl
+helm
+```
 
 ---
 
-## 4. Get GKE Credentials
+## 4. Retrieve GKE Credentials
 
-The workflow retrieves Kubernetes credentials.
+The workflow retrieves Kubernetes credentials for the private cluster.
 
 ```bash
 gcloud container clusters get-credentials
 ```
 
-This allows GitHub Actions to communicate securely with the private GKE cluster.
+This enables GitHub Actions to communicate securely with the GKE cluster.
 
 ---
 
 ## 5. Verify Environment
 
-Basic validation is performed before deployment.
+Basic validation commands ensure authentication and cluster connectivity.
 
 Examples:
 
 ```bash
-kubectl get nodes
-
 gcloud auth list
+
+kubectl get nodes
 ```
 
-Purpose:
-
-- Verify authentication
-- Verify cluster connectivity
-
 ---
 
-## 6. Maven Dependency Cache
+## 6. Build the Application
 
-GitHub Actions caches Maven dependencies to reduce build time.
-
-Benefits:
-
-- Faster builds
-- Reduced network usage
-- Improved pipeline performance
-
----
-
-## 7. Unit Testing
-
-JUnit tests are executed.
+The Spring Boot application is compiled using Maven.
 
 ```bash
-./mvnw clean test
+./mvnw clean package
 ```
 
-If any unit test fails:
+This step also executes all unit tests.
 
-- Pipeline stops
-- Deployment is blocked
+The build produces:
 
----
-
-## 8. Code Coverage
-
-JaCoCo generates code coverage reports.
-
-Reports are uploaded as workflow artifacts.
-
-Purpose:
-
-- Coverage visibility
-- SonarCloud integration
-
----
-
-## 9. SonarCloud Analysis
-
-Static code analysis is performed.
-
-Checks include:
-
-- Code smells
-- Bugs
-- Vulnerabilities
-- Maintainability
-- Coverage
-
-Poor quality code is detected before deployment.
-
----
-
-## 10. Build Application
-
-The Spring Boot application is packaged.
-
-```bash
-./mvnw package
-```
-
-Output:
-
-```
+```text
 hello-gke.jar
 ```
 
 ---
 
-## 11. Docker Build
+## 7. Build Docker Image
 
 The packaged application is converted into a Docker image.
+
+Example:
 
 ```bash
 docker build
 ```
 
-The image is tagged using the Git commit SHA.
+Each image is tagged using the Git commit SHA.
 
 Example:
 
-```
-hello-gke:<commit-sha>
+```text
+hello-gke:3ab91df
 ```
 
 ---
 
-## 12. Push to Artifact Registry
+## 8. Push to Artifact Registry
 
-The container image is pushed into Artifact Registry.
+The Docker image is pushed to Google Artifact Registry.
 
-Artifact Registry becomes the single source of truth for Kubernetes deployments.
+Artifact Registry serves as the central image repository for Kubernetes deployments.
 
 ---
 
-## 13. Vulnerability Scanning
+## 9. Container Security Scan
 
-Google Artifact Analysis scans every image.
+Before deployment, the image is scanned using **Trivy**.
 
-The workflow exports a vulnerability report.
-
-Checks include:
+The scan checks for:
 
 - Critical vulnerabilities
 - High vulnerabilities
 - Medium vulnerabilities
 - Low vulnerabilities
 
----
-
-## 14. Security Gate
-
-Before deployment, the workflow verifies the scan report.
-
-Policy:
-
-| Severity | Action |
-|----------|--------|
-| Critical | Block deployment |
-| High | Block deployment |
-| Medium | Warning |
-| Low | Allow |
-
-Only secure images are deployed.
+This helps identify security issues before deploying the application.
 
 ---
 
-## 15. Deploy using Helm
+## 10. Deploy with Helm
 
-Deployment is performed using Helm.
+The application is deployed using Helm.
 
 ```bash
-helm upgrade --install
+helm upgrade --install hello-gke ./helm/hello-gke
 ```
 
-Benefits:
+Helm provides:
 
-- Versioned deployments
+- Versioned releases
+- Repeatable deployments
 - Parameterized configuration
-- Easy rollback
-- Repeatable releases
+- Easy upgrades
+- Rollback capability
 
 ---
 
-## 16. Verify Rollout
+## 11. Verify Deployment
 
-The workflow waits for Kubernetes to complete the deployment.
+The workflow waits for Kubernetes to complete the rolling update.
+
+Example:
 
 ```bash
-kubectl rollout status
+kubectl rollout status deployment/hello-gke
 ```
 
-If rollout fails, the pipeline exits with an error.
-
----
-
-## 17. Functional Testing
-
-After deployment, API validation is performed.
-
-Current implementation uses:
-
-- Newman
-- Postman Collection
-
-Tests verify:
-
-- HTTP status
-- JSON response
-- Environment
-- Application message
-
----
-
-## 18. Deployment Verification
-
-Additional validation commands execute.
-
-Examples:
+Additional verification commands include:
 
 ```bash
 kubectl get pods
@@ -356,69 +254,123 @@ kubectl get ingress
 helm list
 ```
 
-Purpose:
+---
 
-- Verify healthy deployment
-- Verify Kubernetes resources
-- Verify Helm release
+## 12. Functional Testing
+
+Once deployment completes successfully, the application endpoint is verified.
+
+Example:
+
+```bash
+curl https://app.devopswithsachin.in
+```
+
+Expected response:
+
+```json
+{
+  "message":"Hello from Ingress",
+  "environment":"dev"
+}
+```
+
+This confirms that:
+
+- HTTPS is working
+- Ingress routing is functioning
+- TLS certificate is valid
+- Application is healthy
 
 ---
 
-## 19. Cleanup
+# Deployment Flow
 
-Temporary resources are removed.
+```text
+Developer
 
-Examples:
+↓
 
-- Docker cache
-- Temporary files
-- Runner workspace cleanup
+Git Push
 
-Cleanup reduces disk usage on the self-hosted runner.
+↓
+
+GitHub Actions
+
+↓
+
+Authenticate with Google Cloud
+
+↓
+
+Build Spring Boot Application
+
+↓
+
+Run Unit Tests
+
+↓
+
+Build Docker Image
+
+↓
+
+Push Image to Artifact Registry
+
+↓
+
+Trivy Security Scan
+
+↓
+
+Deploy with Helm
+
+↓
+
+Verify Rollout
+
+↓
+
+Functional Testing
+
+↓
+
+Application Available
+```
 
 ---
 
-# Pipeline Security
+# Security Features
 
-Several security controls are implemented.
+The pipeline incorporates several security best practices.
 
 - Workload Identity Federation
-- No service account keys
-- Artifact Registry
-- Vulnerability scanning
-- Security gate before deployment
-- Private GKE cluster
-- Least privilege IAM
+- No Service Account JSON keys
+- Temporary Google Cloud credentials
+- Private GKE Cluster
+- Trivy container image scanning
+- HTTPS with Let's Encrypt
+- Least privilege IAM permissions
 
 ---
 
 # Pipeline Benefits
 
-The automated pipeline provides:
+The automated CI/CD pipeline provides:
 
 - Consistent deployments
-- Faster releases
+- Automated builds
 - Automated testing
-- Improved security
+- Secure authentication
+- Container security scanning
+- Version-controlled releases
+- Faster software delivery
 - Reduced manual effort
-- Reproducible deployments
-- Better software quality
 
 ---
 
-# Current Pipeline Status
+# Key Takeaways
 
-The CI/CD pipeline successfully automates:
+GitHub Actions serves as the automation engine for this project, orchestrating the complete software delivery lifecycle from source code to production deployment.
 
-- Build
-- Test
-- Code analysis
-- Docker image creation
-- Artifact Registry publishing
-- Vulnerability scanning
-- Security enforcement
-- Helm deployment
-- Kubernetes rollout verification
-- Functional API validation
-
-The project now follows a modern GitOps-style deployment workflow suitable for production environments.
+By integrating Workload Identity Federation, Artifact Registry, Trivy, Helm, and Google Kubernetes Engine, the pipeline delivers a secure, repeatable, and production-oriented deployment process with minimal manual intervention.

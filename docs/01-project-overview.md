@@ -1,74 +1,98 @@
-# End-to-End GitOps CI/CD Platform on Google Kubernetes Engine (GKE)
+# End-to-End Platform Engineering Project on Google Kubernetes Engine (GKE)
 
 ## Project Overview
 
-This project demonstrates how to build a production-style Kubernetes platform on Google Cloud Platform using Infrastructure as Code (Terraform), GitHub Actions, Google Workload Identity Federation, Artifact Registry, Helm, and Google Kubernetes Engine (GKE).
+This repository demonstrates how to build a production-style Platform Engineering environment on Google Cloud Platform (GCP) using modern DevOps and cloud-native technologies.
+
+The platform is fully automated using Infrastructure as Code (Terraform), GitHub Actions, Workload Identity Federation (OIDC), Google Artifact Registry, Helm, and a private Google Kubernetes Engine (GKE) cluster. It also includes production-grade networking, HTTPS using Let's Encrypt, centralized monitoring with Prometheus and Grafana, and automated container security scanning.
 
 The primary objective is to automate the complete software delivery lifecycle—from infrastructure provisioning to secure application deployment—without relying on long-lived service account keys or manual deployment steps.
 
-The project has been built incrementally to simulate how modern Platform Engineering and DevOps teams deploy cloud-native applications in enterprise environments.
+This project has been developed incrementally to simulate how Platform Engineering and DevOps teams design, build, secure, and operate Kubernetes platforms in enterprise environments.
 
 ---
 
-## Project Objectives
+# Project Objectives
 
-The project focuses on implementing a secure and production-oriented deployment pipeline capable of:
+This project demonstrates how to:
 
-- Provisioning cloud infrastructure using Terraform
-- Deploying a private GKE cluster
-- Building Spring Boot applications
-- Containerizing applications using Docker
-- Publishing images to Artifact Registry
-- Performing automated container vulnerability scanning
-- Enforcing security gates before deployment
-- Deploying applications using Helm
-- Exposing workloads using Kubernetes Ingress
-- Authenticating GitHub Actions using Workload Identity Federation
-- Performing automated unit and functional testing
-- Building a reusable CI/CD pipeline following GitOps principles
-
----
-
-## Technologies Used
-
-| Category | Technology |
-|-----------|------------|
-| Cloud | Google Cloud Platform (GCP) |
-| Infrastructure | Terraform |
-| Container Platform | Google Kubernetes Engine (GKE) |
-| Container Runtime | Docker |
-| Container Registry | Artifact Registry |
-| CI/CD | GitHub Actions |
-| Authentication | Workload Identity Federation (OIDC) |
-| Deployment | Helm |
-| Networking | Kubernetes Ingress, NGINX Ingress Controller |
-| Programming | Java 17, Spring Boot |
-| Build Tool | Maven |
-| Security | Artifact Analysis |
-| Testing | JUnit, Newman |
-| Source Control | Git, GitHub |
+* Provision cloud infrastructure using Terraform
+* Deploy a private Google Kubernetes Engine (GKE) cluster
+* Build and package Spring Boot applications
+* Containerize applications using Docker
+* Store container images in Google Artifact Registry
+* Scan container images for vulnerabilities using Trivy
+* Enforce security checks before deployment
+* Deploy applications using Helm
+* Expose workloads through NGINX Ingress
+* Secure applications using cert-manager and Let's Encrypt
+* Manage DNS using Google Cloud DNS with a custom domain
+* Authenticate GitHub Actions using Workload Identity Federation (OIDC)
+* Execute automated unit and functional tests
+* Monitor workloads using Prometheus and Grafana
+* Build a reusable, production-ready CI/CD pipeline that is GitOps-ready
 
 ---
 
-## High-Level Architecture
+# Technologies Used
+
+| Category               | Technology                                             |
+| ---------------------- | ------------------------------------------------------ |
+| Cloud Platform         | Google Cloud Platform (GCP)                            |
+| Infrastructure as Code | Terraform                                              |
+| Kubernetes             | Google Kubernetes Engine (Private GKE)                 |
+| Container Runtime      | Docker                                                 |
+| Container Registry     | Google Artifact Registry                               |
+| CI/CD                  | GitHub Actions                                         |
+| Authentication         | Workload Identity Federation (OIDC)                    |
+| Deployment             | Helm                                                   |
+| Networking             | VPC, Cloud NAT, Cloud Router, NGINX Ingress Controller |
+| DNS                    | Google Cloud DNS                                       |
+| SSL/TLS                | cert-manager, Let's Encrypt                            |
+| Monitoring             | Prometheus, Grafana                                    |
+| Security               | Trivy, Workload Identity Federation                    |
+| Programming            | Java 17, Spring Boot                                   |
+| Build Tool             | Maven                                                  |
+| Testing                | JUnit, Newman                                          |
+| Source Control         | Git, GitHub                                            |
+
+---
+
+# High-Level Architecture
 
 ```mermaid
 flowchart LR
 
 Developer --> GitHub
 
-GitHub --> GitHubActionis
+GitHub --> GitHubActions
 
 GitHubActions --> Build
 
-Build --> ArtifactRegistry
+Build --> DockerImage
 
-ArtifactRegistry --> SecurityScan
+DockerImage --> ArtifactRegistry
 
-SecurityScan --> Helm
+ArtifactRegistry --> TrivyScan
 
-Helm --> GKE
+TrivyScan --> Helm
 
-GKE --> Ingress
+Helm --> PrivateGKE
 
-Ingress --> Application
+PrivateGKE --> NGINXIngress
+
+NGINXIngress --> CertManager
+
+CertManager --> LetsEncrypt
+
+LetsEncrypt --> HTTPS
+
+HTTPS --> App["Spring Boot Application"]
+
+PrivateGKE --> Prometheus
+
+Prometheus --> Grafana
+
+CloudDNS --> NGINXIngress
+```
+

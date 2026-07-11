@@ -1,14 +1,14 @@
-# Container Security
+# 09 - Container Security
 
 ## Overview
 
-Container security is an essential part of any production CI/CD pipeline.
+Container security is an essential part of any modern CI/CD pipeline.
 
-In this project, every Docker image is automatically scanned for known vulnerabilities before deployment to Google Kubernetes Engine (GKE).
+In this project, every Docker image is scanned for known vulnerabilities before it is deployed to the private Google Kubernetes Engine (GKE) cluster.
 
-Images containing Critical or High severity vulnerabilities are prevented from being deployed.
+Container security helps ensure that vulnerable operating system packages, application libraries, and third-party dependencies are identified early in the software delivery lifecycle.
 
-This ensures that only secure container images reach production.
+By integrating security into the CI/CD pipeline, the project follows a DevSecOps approach where security validation is performed automatically rather than after deployment.
 
 ---
 
@@ -20,10 +20,11 @@ A container image may contain:
 
 - Vulnerable operating system packages
 - Outdated Java libraries
-- Security flaws in application dependencies
+- Spring Boot dependency vulnerabilities
+- Third-party package vulnerabilities
 - Known CVEs (Common Vulnerabilities and Exposures)
 
-Without security scanning, vulnerable software could be deployed into production.
+Without automated security scanning, vulnerable software could be deployed into production.
 
 ---
 
@@ -32,176 +33,114 @@ Without security scanning, vulnerable software could be deployed into production
 ```mermaid
 flowchart TD
 
-A[Docker Build]
+A[Spring Boot Build]
 
-A --> B[Artifact Registry]
+A --> B[Docker Build]
 
-B --> C[Artifact Analysis]
+B --> C[Artifact Registry]
 
-C --> D[Vulnerability Report]
+C --> D[Trivy Image Scan]
 
-D --> E{Security Gate}
+D --> E{Security Validation}
 
-E -->|PASS| F[Deploy to GKE]
+E -->|PASS| F[Helm Deployment]
 
-E -->|FAIL| G[Stop Pipeline]
+E -->|FAIL| G[Pipeline Stops]
 ```
+
+---
+
+# Container Security Strategy
+
+The project follows a layered approach to container security.
+
+Security controls include:
+
+- Official base images
+- Multi-stage Docker builds
+- Dependency updates
+- Container vulnerability scanning
+- Immutable Docker images
+- Private Artifact Registry
+- Secure image deployment through Helm
+
+Together, these controls reduce the attack surface of deployed applications.
 
 ---
 
 # Vulnerability Scanning
 
-After a Docker image is pushed into Artifact Registry, Google Artifact Analysis automatically scans the image.
+Container images are scanned using **Trivy** as part of the GitHub Actions pipeline.
 
-The scan detects vulnerabilities in:
+Trivy analyzes:
 
 - Operating system packages
-- Java runtime
-- Spring Boot dependencies
-- Third-party libraries
+- Java dependencies
+- Spring Boot libraries
+- Third-party packages
+- Known CVEs
+
+The scan is performed before deployment, ensuring that vulnerabilities are detected early.
 
 ---
 
-# Generate Vulnerability Report
+# Security Validation
 
-The pipeline exports a vulnerability report using:
+After the image scan completes, the pipeline evaluates the scan results.
 
-```bash
-gcloud artifacts docker images describe \
-IMAGE \
---show-package-vulnerability
-```
+The deployment policy is:
 
-The report is saved as:
+| Severity | Action |
+|----------|--------|
+| Critical | Block Deployment |
+| High | Block Deployment |
+| Medium | Review |
+| Low | Allow |
 
-```
-vulnerability-report.txt
-```
-
-This report is uploaded as a GitHub Actions artifact for review.
+Only images that satisfy the security policy are deployed to Kubernetes.
 
 ---
 
-# Security Policy
+# Common Vulnerabilities
 
-The project enforces the following deployment policy.
-
-| Severity | Deployment |
-|----------|------------|
-| Critical | Block |
-| High | Block |
-| Medium | Warning |
-| Low | Allowed |
-
-Only images that satisfy the security policy are deployed.
-
----
-
-# Security Gate
-
-The GitHub Actions workflow checks the generated report before deployment.
-
-Example:
-
-```bash
-if grep -q "CRITICAL:" vulnerability-report.txt; then
-    echo "Deployment blocked"
-    exit 1
-fi
-
-if grep -q "HIGH:" vulnerability-report.txt; then
-    echo "Deployment blocked"
-    exit 1
-fi
-```
-
-If either Critical or High vulnerabilities are detected, the pipeline terminates immediately.
-
----
-
-# Vulnerabilities Identified
-
-During development, multiple vulnerabilities were discovered.
+During development, vulnerability scanning helped identify outdated dependencies.
 
 Examples included:
 
-- Outdated Tomcat packages
-- Jackson library vulnerabilities
-- OpenSSL operating system packages
-- Linux package updates
+- Spring Boot dependencies
+- Java libraries
+- Operating system packages
+- Third-party open-source components
 
-These findings demonstrated the importance of scanning every container image.
-
----
-
-# Remediation Example 1
-
-## Apache Tomcat
-
-The initial scan detected Critical vulnerabilities in:
-
-```
-tomcat-embed-core
-```
-
-Resolution:
-
-Upgrade the Tomcat version in the project.
-
-Example:
-
-```xml
-<tomcat.version>11.0.22</tomcat.version>
-```
-
-After rebuilding the image, the Critical findings were eliminated.
+Updating these dependencies reduced the overall security risk of the application.
 
 ---
 
-# Remediation Example 2
+# Remediation Process
 
-## Jackson Libraries
+When vulnerabilities are detected, remediation typically involves:
 
-The scan also reported High severity vulnerabilities affecting:
+- Updating Maven dependencies
+- Using newer base Docker images
+- Rebuilding the Docker image
+- Re-running the vulnerability scan
 
-```
-jackson-databind
-```
-
-Resolution:
-
-Upgrade the affected dependency to the latest secure release.
-
-After rebuilding the application, the vulnerability disappeared.
-
----
-
-# Remediation Example 3
-
-## Operating System Packages
-
-Some High severity findings originated from Linux packages inside the Docker base image.
-
-To update these packages, the Dockerfile was modified.
-
-Example:
-
-```dockerfile
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-```
-
-This ensured the latest security patches were included in the image.
+Only after the scan passes does the image proceed to deployment.
 
 ---
 
 # Secure Deployment Flow
 
 ```text
-Source Code
+Developer
+
+↓
+
+GitHub
+
+↓
+
+GitHub Actions
 
 ↓
 
@@ -213,11 +152,11 @@ Artifact Registry
 
 ↓
 
-Automatic Vulnerability Scan
+Trivy Image Scan
 
 ↓
 
-Security Gate
+Security Validation
 
 ↓
 
@@ -225,65 +164,72 @@ Helm Deployment
 
 ↓
 
-Google Kubernetes Engine
+Private GKE Cluster
 ```
-
-Only secure images proceed to deployment.
 
 ---
 
 # Benefits
 
-Integrating security scanning into the CI/CD pipeline provides several advantages.
+Integrating container security into the CI/CD pipeline provides several advantages:
 
-- Prevents vulnerable software from reaching production
-- Detects outdated dependencies
+- Prevents vulnerable images from being deployed
+- Detects outdated dependencies early
 - Encourages regular dependency updates
-- Reduces security risks
-- Improves compliance
+- Improves software quality
 - Supports DevSecOps practices
+- Reduces operational security risks
 
 ---
 
-# Best Practices Followed
+# Best Practices Implemented
 
-This project implements several container security best practices.
+The project follows container security best practices, including:
 
-- Scan every image
-- Fail pipeline on Critical vulnerabilities
-- Fail pipeline on High vulnerabilities
-- Use official base images
-- Keep dependencies updated
-- Store reports as build artifacts
-- Deploy only scanned images
-- Use immutable image tags
+- Multi-stage Docker builds
+- Official base images
+- Regular dependency updates
+- Immutable image tags
+- Private Artifact Registry
+- Automated vulnerability scanning
+- Security validation before deployment
+- Secure CI/CD authentication using Workload Identity Federation
 
 ---
 
 # Future Improvements
 
-Potential enhancements include:
+The platform can be further enhanced with:
 
-- Integrate Trivy
-- Integrate Grype
-- Generate Software Bill of Materials (SBOM)
+- Software Bill of Materials (SBOM)
 - Image signing using Cosign
-- Admission Controller policy enforcement
 - Binary Authorization
+- Kubernetes Admission Controllers
 - Runtime container security
+- Policy enforcement using Kyverno or Gatekeeper
+
+---
+
+# Related Documentation
+
+This document explains the overall container security strategy.
+
+Detailed implementation of Trivy image scanning is covered in:
+
+**16-trivy-image-scanning.md**
 
 ---
 
 # Key Takeaways
 
-Container security is integrated directly into the deployment pipeline rather than being treated as a separate activity.
+Container security is integrated directly into the CI/CD pipeline rather than being treated as a separate activity.
 
 Every container image is:
 
 - Built automatically
-- Stored securely
-- Scanned for vulnerabilities
-- Evaluated against a security policy
-- Approved before deployment
+- Stored securely in Artifact Registry
+- Scanned using Trivy
+- Validated against the project's security policy
+- Approved before deployment to Kubernetes
 
-This approach aligns with modern DevSecOps practices and helps ensure that production environments run only trusted and secure container images.
+This approach aligns with modern DevSecOps practices and helps ensure that only trusted and secure container images are deployed to the Kubernetes platform.

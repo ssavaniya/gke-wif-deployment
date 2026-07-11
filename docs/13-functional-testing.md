@@ -1,12 +1,12 @@
-# Functional Testing
+# 13 - Functional Testing
 
 ## Overview
 
 Functional testing validates the deployed application from an end-user perspective.
 
-Unlike unit tests, which verify individual components, functional tests verify that the complete application behaves correctly after deployment to Google Kubernetes Engine (GKE).
+Unlike unit tests, which verify individual components in isolation, functional tests verify that the complete application behaves correctly after being deployed to Google Kubernetes Engine (GKE).
 
-The tests execute automatically after a successful deployment.
+These tests execute automatically after a successful deployment and confirm that the application is accessible over HTTPS using the public domain.
 
 ---
 
@@ -15,12 +15,14 @@ The tests execute automatically after a successful deployment.
 The objective of functional testing is to verify that:
 
 - The application is reachable
+- HTTPS is working correctly
+- DNS resolution is successful
 - HTTP requests return successful responses
 - API endpoints behave correctly
 - Expected JSON responses are returned
 - The deployed version is healthy
 
-This provides confidence that the deployment completed successfully.
+Successful functional tests provide confidence that the deployment completed successfully.
 
 ---
 
@@ -33,7 +35,7 @@ A[Deploy Application]
 
 A --> B[Wait for Rollout]
 
-B --> C[Expose Application]
+B --> C[Verify Ingress]
 
 C --> D[Run Functional Tests]
 
@@ -46,9 +48,9 @@ E -->|No| G[Pipeline Failed]
 
 ---
 
-# Testing Tool
+# Testing Tools
 
-The project uses **Postman Collections** executed through **Newman**.
+The project uses the following tools for API validation.
 
 | Tool | Purpose |
 |------|---------|
@@ -60,7 +62,7 @@ The project uses **Postman Collections** executed through **Newman**.
 
 # Test Collection
 
-The repository contains:
+The repository contains the Postman collection used for functional testing.
 
 ```
 tests/
@@ -68,159 +70,158 @@ tests/
 └── hello-gke-functional.postman_collection.json
 ```
 
-The collection validates the application's HTTP API.
+The collection validates the deployed application's REST API.
 
 ---
 
 # Test Scenarios
 
-Current functional tests verify:
+The current functional tests verify:
 
-- Application responds successfully
+- Application is reachable
+- HTTPS connection succeeds
 - HTTP status code is 200
 - Response is valid JSON
 - Environment value is correct
-- Response contains the expected message
+- Expected application message is returned
 
-Example expected response:
+Expected response:
 
 ```json
 {
   "environment": "dev",
-  "message": "Hello from Ingress"
+  "message": "Hello from GKE"
 }
 ```
 
 ---
 
-# Initial Challenge
+# Accessing the Application
 
-The application was initially exposed using a **ClusterIP Service**.
-
-ClusterIP services are accessible only from inside the Kubernetes cluster.
-
-GitHub Actions could not directly reach:
+The application is exposed through the NGINX Ingress Controller using a custom domain.
 
 ```
-http://hello-gke
+https://app.devopswithsachin.in
 ```
 
-This resulted in errors such as:
+Traffic flow:
+
+```text
+User
+
+↓
+
+HTTPS
+
+↓
+
+NGINX Ingress Controller
+
+↓
+
+ClusterIP Service
+
+↓
+
+Spring Boot Pods
+```
+
+This closely resembles how applications are accessed in production Kubernetes environments.
+
+---
+
+# Early Challenges
+
+During development, several approaches were explored before arriving at the final solution.
+
+### ClusterIP Service
+
+Initially, the application was exposed only through a ClusterIP Service.
+
+Because ClusterIP services are internal to the Kubernetes cluster, GitHub Actions could not access the application directly.
+
+Typical errors included:
 
 ```
+Connection refused
+
 Invalid URI
-
-Can't connect to BASE_URL
 
 Name or service not known
 ```
 
 ---
 
-# Attempt 1
+### LoadBalancer Service
 
-The pipeline attempted to retrieve a LoadBalancer IP.
+A LoadBalancer Service was also evaluated.
 
-Example:
-
-```bash
-kubectl get svc hello-gke
-```
-
-Result:
-
-```
-EXTERNAL-IP
-
-<none>
-```
-
-Since the service was ClusterIP, no external address existed.
+Although it exposed the application externally, it required a dedicated public IP address for each application and was not suitable for a scalable ingress architecture.
 
 ---
 
-# Attempt 2
+### Final Solution
 
-The application was later exposed through Kubernetes Ingress.
+The final implementation uses:
 
-Example:
+- NGINX Ingress Controller
+- Custom domain
+- cert-manager
+- Let's Encrypt
+- HTTPS
 
-```bash
-kubectl get ingress
-```
-
-Result:
-
-```
-ADDRESS
-
-136.xxx.xxx.xxx
-```
-
-The application became accessible through the Ingress IP.
-
----
-
-# Local Pipeline Validation
-
-To simplify testing during development, the pipeline uses Kubernetes port forwarding.
-
-Example:
-
-```bash
-kubectl port-forward svc/hello-gke 8080:80
-```
-
-Application becomes available locally:
-
-```
-http://localhost:8080
-```
-
-The pipeline then sets:
-
-```bash
-BASE_URL=localhost:8080
-```
-
-Newman executes against the local endpoint.
+This allows both users and automated tests to access the application through a production-style endpoint.
 
 ---
 
 # Newman Execution
+
+The GitHub Actions workflow executes the Postman collection using Newman.
 
 Example:
 
 ```bash
 npx newman run \
 tests/hello-gke-functional.postman_collection.json \
---env-var baseUrl=http://localhost:8080
+--env-var baseUrl=https://app.devopswithsachin.in
 ```
 
-This executes the Postman collection and validates the deployed application.
+Newman validates the application's response and exits with a non-zero status if any test fails.
 
 ---
 
 # Pipeline Position
 
-Functional testing occurs after deployment.
+Functional testing is the final validation step of the deployment pipeline.
 
-Pipeline sequence:
+Pipeline flow:
 
 ```text
-Build
+Checkout Source
 
 ↓
 
-Docker Image
+Build Application
 
 ↓
 
-Security Scan
+Run Unit Tests
 
 ↓
 
-Deploy
+Docker Build
+
+↓
+
+Push Artifact Registry
+
+↓
+
+Trivy Scan
+
+↓
+
+Helm Deployment
 
 ↓
 
@@ -232,7 +233,7 @@ Functional Tests
 
 ↓
 
-Deployment Complete
+Deployment Successful
 ```
 
 Only healthy deployments complete successfully.
@@ -241,45 +242,50 @@ Only healthy deployments complete successfully.
 
 # Benefits
 
-Functional testing provides several advantages.
+Automated functional testing provides several advantages:
 
 - Validates deployed application
-- Confirms Kubernetes networking
-- Verifies API behavior
+- Verifies Kubernetes networking
+- Confirms HTTPS configuration
+- Validates Ingress routing
 - Detects deployment failures
 - Prevents unhealthy releases
 
 ---
 
+# Best Practices Implemented
+
+This project follows several functional testing best practices:
+
+- Automated execution
+- Tests executed after deployment
+- HTTPS validation
+- API response validation
+- JSON response verification
+- HTTP status validation
+- Pipeline fails on test failures
+- Production-style endpoint testing
+
+---
+
 # Future Improvements
 
-Future enhancements include:
+Potential enhancements include:
 
-- Multiple API endpoints
+- Additional API endpoint testing
 - Authentication testing
 - Negative test cases
 - Response time validation
 - Performance testing
 - Load testing
-- Integration with monitoring
-
----
-
-# Best Practices Followed
-
-The project follows several functional testing best practices.
-
-- Automated execution
-- Tests executed after deployment
-- API validation
-- JSON response verification
-- HTTP status validation
-- Pipeline fails on test failures
+- Integration with monitoring and alerting
 
 ---
 
 # Key Takeaways
 
-Functional testing acts as the final quality gate before considering a deployment successful.
+Functional testing serves as the final quality gate in the CI/CD pipeline.
 
-While unit tests verify application logic, functional tests validate the deployed application running inside Kubernetes, ensuring that users receive the expected responses after every release.
+While unit tests validate application logic, functional tests verify the fully deployed application running on Google Kubernetes Engine.
+
+By testing the live application through **https://app.devopswithsachin.in**, the pipeline confirms that Kubernetes deployments, Ingress routing, DNS resolution, HTTPS, and the application itself are all functioning correctly before considering a deployment successful.

@@ -1,135 +1,154 @@
-# 05 - Workload Identity Federation
+# 05 - Workload Identity Federation (WIF)
 
-## Objective
+## Overview
 
-This project uses Google Cloud Workload Identity Federation (WIF) to securely authenticate GitHub Actions with Google Cloud Platform without storing or managing long-lived service account keys.
+This project uses **Google Cloud Workload Identity Federation (WIF)** to securely authenticate GitHub Actions with Google Cloud Platform without storing long-lived Service Account keys.
 
-Instead of downloading JSON key files, GitHub Actions exchanges its OpenID Connect (OIDC) token for temporary Google Cloud credentials during each workflow execution.
+Instead of downloading and storing a JSON key in GitHub Secrets, GitHub Actions exchanges its OpenID Connect (OIDC) token for a temporary Google Cloud access token during each workflow execution.
 
-This is Google's recommended authentication method for CI/CD pipelines.
+This is Google's recommended authentication mechanism for CI/CD pipelines because it removes the operational and security risks associated with managing static credentials.
 
 ---
 
-## Why Workload Identity Federation?
+# Why Workload Identity Federation?
 
-Traditional CI/CD pipelines often authenticate using downloaded Service Account JSON keys.
+Traditional CI/CD pipelines authenticate using Service Account JSON keys.
 
-```
+```text
 GitHub Actions
-        │
-JSON Key File
-        │
-Google Cloud
+       │
+Service Account Key
+       │
+Google Cloud APIs
 ```
 
-Although functional, this approach introduces several security risks:
+Although this approach works, it introduces several security concerns:
 
 - Long-lived credentials
 - Secret rotation overhead
 - Risk of accidental key exposure
-- Increased attack surface
+- Larger attack surface
+- Difficult credential management
 
-Workload Identity Federation eliminates these issues by issuing short-lived credentials only when the workflow runs.
+With Workload Identity Federation, no credentials are stored in GitHub.
 
-```
+```text
 GitHub Actions
        │
 OIDC Token
        │
 Workload Identity Federation
        │
-Temporary Credential
+Temporary Google Credential
        │
 Google Cloud APIs
 ```
 
+The temporary credential expires automatically after the workflow completes.
+
 ---
 
-## Authentication Flow
+# Authentication Flow
 
 ```mermaid
 sequenceDiagram
 
-participant GH as GitHub Actions
-participant OIDC as GitHub OIDC
+participant GitHub as GitHub Actions
+participant OIDC as GitHub OIDC Provider
 participant WIF as Workload Identity Federation
-participant IAM as IAM Service Account
+participant IAM as Google Service Account
 participant GCP as Google Cloud APIs
 
-GH->>OIDC: Request OIDC Token
-OIDC-->>GH: JWT Token
+GitHub->>OIDC: Request OIDC Token
+OIDC-->>GitHub: JWT Token
 
-GH->>WIF: Exchange JWT
+GitHub->>WIF: Exchange JWT
 
 WIF->>IAM: Impersonate Service Account
 
-IAM-->>GH: Temporary Access Token
+IAM-->>GitHub: Temporary Access Token
 
-GH->>GCP: Call Google Cloud APIs
+GitHub->>GCP: Authenticate API Requests
 ```
 
 ---
 
-## Components Created
+# Components Configured
 
-The following Google Cloud resources were configured.
+The following resources were created in Google Cloud.
 
-### Workload Identity Pool
+## Workload Identity Pool
 
-Acts as the trust boundary between GitHub and Google Cloud.
+A Workload Identity Pool establishes the trust relationship between GitHub and Google Cloud.
 
-Example
+Example:
 
-```
+```text
 github-action
 ```
 
 ---
 
-### OIDC Provider
+## OIDC Provider
 
-Configured to trust GitHub's OIDC endpoint.
+An OIDC Provider was configured inside the Workload Identity Pool.
 
-Issuer
+Issuer URI:
 
-```
+```text
 https://token.actions.githubusercontent.com
 ```
 
+Only GitHub-issued OIDC tokens are trusted.
+
 ---
 
-### Attribute Mapping
+## Attribute Mapping
 
-The following attributes were mapped.
+GitHub claims are mapped to Google Cloud attributes.
 
 | GitHub Claim | Google Attribute |
 |--------------|------------------|
 | assertion.sub | google.subject |
 | assertion.repository | attribute.repository |
 
-These mappings allow IAM policies to restrict authentication to a specific GitHub repository.
+These mappings allow IAM policies to authorize only the intended GitHub repository.
 
 ---
 
-### IAM Service Account
+## Attribute Condition
 
-A dedicated deployment service account was created.
+Authentication is restricted to a single GitHub repository.
 
-Example
+Example:
 
+```text
+assertion.repository == "ssavaniya/gke-wif-deployment"
 ```
-github-gke-deployer@PROJECT_ID.iam.gserviceaccount.com
-```
 
-This service account is impersonated by GitHub Actions after successful authentication.
+This prevents other repositories from impersonating the Google Cloud service account.
 
 ---
 
-## IAM Roles Assigned
+## Google Cloud Service Account
 
-The deployment service account was granted only the permissions required by the CI/CD pipeline.
+A dedicated deployment service account is used by the CI/CD pipeline.
 
-Examples include:
+Example:
+
+```text
+github-action-wif@PROJECT_ID.iam.gserviceaccount.com
+```
+
+GitHub Actions impersonates this service account after successful authentication.
+
+---
+
+# IAM Roles
+
+The deployment service account follows the principle of least privilege and has only the permissions required for deployments.
+
+Assigned roles include:
 
 - Kubernetes Engine Developer
 - Kubernetes Engine Cluster Viewer
@@ -137,11 +156,17 @@ Examples include:
 - Service Account User
 - Workload Identity User
 
-Following the principle of least privilege helps reduce security risk.
+These permissions allow the pipeline to:
+
+- Authenticate with Google Cloud
+- Retrieve GKE credentials
+- Push container images
+- Deploy Helm releases
+- Interact with Kubernetes resources
 
 ---
 
-## GitHub Actions Configuration
+# GitHub Actions Authentication
 
 Authentication is performed using the official Google GitHub Action.
 
@@ -149,47 +174,97 @@ Authentication is performed using the official Google GitHub Action.
 - name: Authenticate to Google Cloud
   uses: google-github-actions/auth@v2
   with:
-    workload_identity_provider: projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-action/providers/github-action
-    service_account: github-gke-deployer@PROJECT_ID.iam.gserviceaccount.com
+    workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+    service_account: ${{ secrets.SERVICE_ACCOUNT }}
 ```
 
-No credentials are stored inside GitHub Secrets.
+No JSON key files are stored in GitHub.
 
 ---
 
-## Benefits
+# Deployment Workflow
 
-Using Workload Identity Federation provides several advantages.
+The authentication sequence is shown below.
+
+```text
+Developer
+
+↓
+
+Git Push
+
+↓
+
+GitHub Actions
+
+↓
+
+Request OIDC Token
+
+↓
+
+Workload Identity Federation
+
+↓
+
+Temporary Google Credential
+
+↓
+
+Google Cloud APIs
+
+↓
+
+Artifact Registry
+
+↓
+
+Private GKE Cluster
+
+↓
+
+Helm Deployment
+```
+
+---
+
+# Security Benefits
+
+Workload Identity Federation significantly improves the security of the deployment pipeline.
+
+Benefits include:
 
 - No Service Account JSON keys
 - Temporary credentials
-- Automatic credential rotation
+- Automatic credential expiration
 - Reduced secret management
-- Better compliance
-- Recommended by Google Cloud
-- Safer CI/CD pipelines
+- Native IAM integration
+- Repository-level authorization
+- Google's recommended authentication mechanism
 
 ---
 
-## Validation
+# Validation
 
-Authentication can be verified within GitHub Actions.
+Authentication can be verified during a GitHub Actions workflow.
+
+List authenticated accounts:
 
 ```bash
 gcloud auth list
 ```
 
-Example output
+Example output:
 
-```
+```text
 Credentialed Accounts
 
 ACTIVE  ACCOUNT
 
-*       github-gke-deployer@PROJECT_ID.iam.gserviceaccount.com
+* github-action-wif@PROJECT_ID.iam.gserviceaccount.com
 ```
 
-Cluster access can also be verified.
+Verify cluster access:
 
 ```bash
 kubectl get nodes
@@ -199,49 +274,66 @@ Successful execution confirms that GitHub Actions has authenticated correctly us
 
 ---
 
-## Troubleshooting
+# Troubleshooting
 
-### Unauthorized Client
+## unauthorized_client
 
 Possible causes:
 
 - Incorrect Workload Identity Provider
-- Wrong Service Account
-- Missing Workload Identity User role
+- Invalid OIDC Provider
+- Incorrect Service Account
+- Incorrect issuer URI
 
 ---
 
-### Permission Denied
-
-Verify IAM roles assigned to the deployment service account.
-
----
-
-### Invalid Principal Set
-
-Usually caused by incorrect attribute mapping or repository restrictions.
+## Permission Denied
 
 Verify:
 
-- Repository name
-- Branch conditions
-- Attribute mappings
-- IAM bindings
+- IAM roles
+- Service Account permissions
+- Artifact Registry permissions
+- Kubernetes Engine permissions
 
 ---
 
-## Best Practices
+## Invalid Principal Set
 
-- Never download Service Account keys.
+Usually caused by:
+
+- Incorrect repository name
+- Incorrect attribute mapping
+- Invalid IAM binding
+- Incorrect Workload Identity Pool
+
+---
+
+## Failed to Retrieve GKE Credentials
+
+Verify:
+
+- Kubernetes Engine Developer role
+- Kubernetes Engine Cluster Viewer role
+- Correct cluster name
+- Correct region or zone
+
+---
+
+# Best Practices
+
+- Never use Service Account JSON keys.
 - Use dedicated deployment service accounts.
-- Grant minimum required IAM permissions.
+- Grant only the minimum required IAM permissions.
 - Restrict authentication to approved repositories.
-- Use short-lived credentials whenever possible.
+- Use temporary credentials.
+- Rotate IAM permissions regularly.
+- Audit Workload Identity bindings periodically.
 
 ---
 
-## Outcome
+# Key Takeaways
 
-The project authenticates GitHub Actions securely using Google's recommended Workload Identity Federation mechanism.
+Workload Identity Federation enables GitHub Actions to securely access Google Cloud resources without storing static credentials.
 
-No static credentials are stored, significantly improving the security posture of the CI/CD pipeline.
+By using OpenID Connect (OIDC) and temporary IAM credentials, the deployment pipeline follows Google's security best practices while reducing operational overhead and significantly improving the overall security posture of the platform.

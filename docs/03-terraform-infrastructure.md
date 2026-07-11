@@ -2,54 +2,54 @@
 
 ## Overview
 
-The entire Google Cloud infrastructure for this project is provisioned using **Terraform**, enabling Infrastructure as Code (IaC) and ensuring that the environment can be recreated consistently across multiple deployments.
+This project uses **Terraform** to provision the core Google Cloud infrastructure required to run a private Kubernetes platform. Infrastructure as Code (IaC) ensures that resources can be created consistently, maintained through version control, and recreated whenever required.
 
-Terraform manages all core infrastructure components, including networking, compute resources, Kubernetes, and supporting services required for application deployment.
+Terraform is responsible for provisioning the networking layer, private GKE cluster, Compute Engine VM, Cloud Router, Cloud NAT, and supporting infrastructure.
 
-Using Terraform provides several advantages:
-
-- Infrastructure version control
-- Repeatable deployments
-- Automated provisioning
-- Easier maintenance
-- Reduced manual configuration
-- Production-ready infrastructure management
+Some supporting services, such as **Cloud DNS** and **Artifact Registry**, were intentionally created manually through the Google Cloud Console to better understand both manual and Infrastructure as Code approaches.
 
 ---
 
-# Infrastructure Components
+# Infrastructure Provisioned by Terraform
 
-The following resources are provisioned using Terraform.
+The following resources are created using Terraform.
 
 ```text
 Terraform
 
 │
-
-├── VPC Network
-
-├── Subnet
-
+├── Custom VPC
+├── Private Subnet
 ├── Cloud Router
-
 ├── Cloud NAT
-
-├── Artifact Registry
-
 ├── Private GKE Cluster
-
 ├── GKE Node Pool
-
 ├── Bastion VM
-
-└── Service Accounts
+└── Firewall Rules
 ```
 
 ---
 
-# Project Structure
+# Resources Created Manually
 
-The Terraform configuration is organized into multiple files to improve readability and maintainability.
+The following resources are **not** managed by Terraform in this project.
+
+| Resource | Purpose |
+|----------|---------|
+| Artifact Registry | Stores Docker images |
+| Cloud DNS | Hosts DNS zone and domain records |
+| Workload Identity Federation | GitHub authentication |
+| IAM Role Bindings | Required for GitHub Actions |
+| cert-manager | TLS certificate automation |
+| NGINX Ingress Controller | External traffic routing |
+
+This hybrid approach was intentionally used to gain experience with both Terraform-managed and manually configured Google Cloud services.
+
+---
+
+# Terraform Project Structure
+
+The Terraform configuration is organized into multiple files for better readability and maintenance.
 
 ```text
 terraform/
@@ -62,250 +62,226 @@ terraform/
 ├── nat.tf
 ├── gce.tf
 ├── gke.tf
-├── artifact-registry.tf
-└── service-account.tf
+├── firewall.tf
+└── terraform.tfvars
 ```
 
-Each file is responsible for provisioning a specific set of cloud resources.
+Each file manages a specific part of the infrastructure.
 
 ---
 
 # Provider Configuration
 
-Terraform uses the Google Cloud provider to interact with Google Cloud APIs.
+Terraform uses the Google Cloud Provider to communicate with Google Cloud APIs.
 
-The provider configuration specifies:
+The provider configuration defines:
 
-- Project ID
+- Google Cloud Project
 - Region
 - Authentication
 - Provider version
 
-Terraform communicates directly with Google Cloud APIs during the provisioning process.
+Terraform authenticates using the currently logged-in Google Cloud account.
 
 ---
 
-# Virtual Private Cloud (VPC)
+# Custom VPC
 
-A custom Virtual Private Cloud was created to isolate all project resources.
+A dedicated Virtual Private Cloud (VPC) isolates all project resources from Google's default network.
 
-Instead of using Google's default network, a dedicated VPC provides:
+Benefits include:
 
+- Network isolation
 - Better security
-- Controlled routing
-- Custom firewall rules
-- Easier network management
+- Custom routing
+- Controlled firewall rules
+- Production-style networking
 
-The VPC hosts:
+The VPC contains:
 
 - Private GKE Cluster
-- Bastion VM
+- Compute Engine administration VM
+- Cloud Router
 - Cloud NAT
-- Internal networking
 
 ---
 
-# Subnet
+# Private Subnet
 
-A custom subnet was created inside the VPC.
+A custom subnet provides IP addresses for all private resources.
 
-The subnet provides IP addresses for:
+Private Google Access is enabled, allowing private resources to communicate with Google Cloud services without requiring public IP addresses.
 
-- Virtual Machines
+The subnet hosts:
+
 - GKE Nodes
-- Internal communication
+- Compute Engine VM
 
-Private Google Access is enabled to allow private resources to communicate with Google Cloud services without requiring public IP addresses.
+---
+
+# Firewall Rules
+
+Terraform provisions firewall rules required for:
+
+- SSH access to the administration VM
+- Internal communication within the VPC
+- Kubernetes node communication
+
+Firewall rules are restricted to the minimum required access wherever possible.
 
 ---
 
 # Cloud Router
 
-Cloud Router dynamically manages routing information for Cloud NAT.
+Cloud Router enables Cloud NAT to provide outbound internet connectivity for private resources.
 
 Responsibilities include:
 
-- Dynamic route advertisement
-- Communication between Cloud NAT and the VPC
+- Dynamic route management
+- NAT integration
 - Internet egress support
 
-Although no BGP peers are configured in this project, Cloud Router is required for Cloud NAT.
+Although BGP peers are not configured, Cloud Router is mandatory when using Cloud NAT.
 
 ---
 
 # Cloud NAT
 
-The GKE nodes are deployed without public IP addresses.
+The Kubernetes nodes and Compute Engine VM do not require public IP addresses.
 
-Cloud NAT allows private resources to access the internet securely.
+Cloud NAT allows private resources to securely access the internet for outbound traffic such as:
 
-Typical outbound traffic includes:
-
-- Pulling Docker images
 - Downloading operating system updates
+- Pulling container images
 - Accessing Google APIs
 - Installing application dependencies
 
 Traffic flow:
 
 ```text
-Private Node
+Private Resources
 
-↓
+        │
+        ▼
 
 Cloud NAT
 
-↓
+        │
+        ▼
 
 Internet
 ```
 
-No inbound traffic is permitted through Cloud NAT.
+Cloud NAT only allows outbound connections and does not expose internal resources to the internet.
 
 ---
 
-# Artifact Registry
+# Compute Engine Administration VM
 
-Artifact Registry stores Docker container images used by the Kubernetes cluster.
+A private Compute Engine VM is deployed inside the same VPC as the Kubernetes cluster.
 
-Benefits include:
+This VM is used for:
 
-- Secure image storage
-- Versioned images
-- Vulnerability scanning integration
-- Regional repository
-- Integration with GKE
-
-Every application deployment references images stored in Artifact Registry.
-
----
-
-# Bastion Virtual Machine
-
-A Compute Engine virtual machine is provisioned inside the same VPC as the Kubernetes cluster.
-
-Purpose:
-
-- Cluster administration
+- Kubernetes administration
 - kubectl access
 - Helm deployments
 - GitHub Actions self-hosted runner
+- Troubleshooting
 
-Since the Kubernetes control plane is private, administration must occur from within the VPC.
+Since the GKE control plane is private, cluster management is performed from this VM.
 
 ---
 
 # Private GKE Cluster
 
-A private Google Kubernetes Engine cluster is provisioned.
+Terraform provisions a private Google Kubernetes Engine cluster.
 
-Key characteristics:
+Key features include:
 
-- Private nodes
-- Private control plane
+- Private Nodes
+- Private Control Plane
+- IP Alias Networking
 - Workload Identity enabled
-- IP Alias enabled
-- Shielded Nodes
-- COS Container-Optimized OS
+- Shielded GKE Nodes
+- Container-Optimized OS
 
-Private clusters reduce the attack surface by preventing direct public access to cluster nodes.
+Private clusters significantly reduce the attack surface by preventing direct public access to worker nodes.
 
 ---
 
 # GKE Node Pool
 
-The cluster uses a dedicated managed node pool.
+The cluster uses a managed node pool.
 
 Configuration includes:
 
-- Spot Virtual Machines
 - e2-medium machine type
+- Spot Virtual Machines
 - Auto Repair
 - Auto Upgrade
 - Cluster Autoscaler
-- Workload Metadata enabled
 
-Spot VMs significantly reduce infrastructure costs while remaining suitable for non-production workloads.
+Spot VMs help reduce infrastructure costs while remaining suitable for development and learning environments.
 
 ---
 
 # Cluster Autoscaler
 
-Cluster Autoscaler is enabled on the node pool.
+Cluster Autoscaler automatically adjusts the number of worker nodes based on workload demand.
 
 Configuration:
 
 - Minimum Nodes: 1
 - Maximum Nodes: 3
 
-The autoscaler automatically provisions or removes worker nodes based on pending workloads.
-
 Benefits include:
 
-- Cost optimization
 - Automatic scaling
 - Improved resource utilization
+- Lower infrastructure costs
 
 ---
 
-# Workload Identity
+# Infrastructure Relationship
 
-Workload Identity is enabled during cluster creation.
-
-This allows Kubernetes workloads and GitHub Actions to authenticate securely without storing service account keys.
-
-Benefits:
-
-- No JSON keys
-- Temporary credentials
-- IAM integration
-- Improved security
-
----
-
-# Resource Relationships
-
-The infrastructure components are interconnected as shown below.
+The deployed infrastructure follows the architecture below.
 
 ```text
 Terraform
 
-↓
+        │
+        ▼
 
-VPC
-
-├── Subnet
-
-│
-
-├── Cloud Router
-
-│
-
-├── Cloud NAT
-
-│
-
-├── Bastion VM
-
-│
-
-└── Private GKE Cluster
+Custom VPC
 
         │
+        ├───────────────┐
+        │               │
+        ▼               ▼
 
-        ├── Node Pool
-
+Private Subnet     Cloud Router
+        │               │
+        │               ▼
+        │          Cloud NAT
         │
+        ├───────────────┐
+        │               │
+        ▼               ▼
 
-        └── Workloads
+Compute VM     Private GKE Cluster
+                       │
+                       ▼
+                 Managed Node Pool
+                       │
+                       ▼
+                Kubernetes Workloads
 ```
 
 ---
 
 # Terraform Workflow
 
-Infrastructure changes follow a standard Terraform workflow.
+Terraform follows the standard Infrastructure as Code lifecycle.
 
 Initialize Terraform
 
@@ -313,13 +289,13 @@ Initialize Terraform
 terraform init
 ```
 
-Review execution plan
+Review planned changes
 
 ```bash
 terraform plan
 ```
 
-Provision infrastructure
+Create or update infrastructure
 
 ```bash
 terraform apply
@@ -333,27 +309,32 @@ terraform destroy
 
 ---
 
-# Benefits of Infrastructure as Code
+# Benefits of Using Terraform
 
-Using Terraform provides several operational advantages.
+Using Terraform provides several advantages:
 
-- Infrastructure is reproducible.
-- Resources remain version controlled.
-- Changes are peer reviewed.
-- Drift is minimized.
-- Deployments become predictable.
-- Disaster recovery becomes easier.
+- Infrastructure version control
+- Repeatable deployments
+- Consistent environments
+- Easier maintenance
+- Reduced manual configuration
+- Simplified disaster recovery
 
 ---
 
 # Key Takeaways
 
-By provisioning infrastructure through Terraform, the project achieves:
+Terraform provides the foundation of the platform by provisioning the core infrastructure required to run a secure private Kubernetes environment.
 
-- Fully automated cloud provisioning
-- Secure private networking
-- Production-style Kubernetes infrastructure
-- Cost optimization through Spot VMs
-- Repeatable deployments
-- Infrastructure version control
-- Foundation for GitOps and CI/CD
+In this project Terraform provisions:
+
+- Custom VPC
+- Private Subnet
+- Firewall Rules
+- Cloud Router
+- Cloud NAT
+- Private GKE Cluster
+- Managed Node Pool
+- Compute Engine Administration VM
+
+Additional services such as Cloud DNS, Artifact Registry, Workload Identity Federation, cert-manager, and the NGINX Ingress Controller were configured manually to gain hands-on experience with Google Cloud administration before automating them in future iterations.

@@ -1,4 +1,4 @@
-# Docker
+# 07 - Docker
 
 ## Overview
 
@@ -6,7 +6,9 @@ Docker is used to package the Spring Boot application into a lightweight, portab
 
 Instead of deploying application source code directly, Kubernetes deploys immutable Docker images stored in Google Artifact Registry.
 
-This ensures that the exact same application package is tested, scanned, and deployed throughout the CI/CD pipeline.
+The project uses a **multi-stage Docker build** to create a small, production-ready runtime image while keeping the build process efficient and secure.
+
+This ensures that the exact same application package is built, scanned, stored, and deployed throughout the CI/CD pipeline.
 
 ---
 
@@ -14,10 +16,9 @@ This ensures that the exact same application package is tested, scanned, and dep
 
 Traditional application deployment requires installing runtime dependencies on every server.
 
-Example:
-
-```
+```text
 Application
+
 ↓
 
 Java Installation
@@ -40,14 +41,16 @@ This approach often leads to:
 
 Docker solves these issues by packaging everything required to run the application into a single container image.
 
-```
+```text
 Docker Image
 
 ├── Spring Boot Application
 ├── Java Runtime
 ├── Required Libraries
-└── Configuration
+└── Application Configuration
 ```
+
+The same Docker image is used in development, testing, and production, ensuring consistent behavior across environments.
 
 ---
 
@@ -60,29 +63,57 @@ A[Spring Boot Source Code]
 
 A --> B[Maven Build]
 
-B --> C[JAR File]
+B --> C[Docker Multi-stage Build]
 
-C --> D[Docker Build]
+C --> D[Docker Image]
 
-D --> E[Docker Image]
+D --> E[Artifact Registry]
 
-E --> F[Artifact Registry]
+E --> F[Trivy Image Scan]
 
-F --> G[Google Kubernetes Engine]
+F --> G[Private GKE Cluster]
+
+G --> H[NGINX Ingress]
+
+H --> I[HTTPS Application]
 ```
+
+---
+
+# Multi-stage Docker Build
+
+The project uses a multi-stage Docker build.
+
+The first stage compiles the application, while the second stage creates a lightweight runtime image containing only the files required to run the application.
+
+Benefits include:
+
+- Smaller image size
+- Faster deployments
+- Reduced attack surface
+- Cleaner production images
+- Separation of build and runtime environments
 
 ---
 
 # Dockerfile
 
-The project uses a simple production-ready Dockerfile.
-
 ```dockerfile
+# Build Stage
+FROM maven:3.9.9-eclipse-temurin-17 AS builder
+
+WORKDIR /app
+
+COPY . .
+
+RUN ./mvnw clean package -DskipTests
+
+# Runtime Stage
 FROM eclipse-temurin:17-jre
 
 WORKDIR /app
 
-COPY target/*.jar app.jar
+COPY --from=builder /app/target/*.jar app.jar
 
 EXPOSE 8080
 
@@ -93,86 +124,91 @@ ENTRYPOINT ["java","-jar","app.jar"]
 
 # Dockerfile Explanation
 
-## Base Image
+## Build Stage
+
+The build stage compiles the Spring Boot application.
+
+Responsibilities include:
+
+- Download Maven dependencies
+- Compile source code
+- Execute Maven build
+- Generate executable JAR
+
+The generated artifact is:
+
+```text
+hello-gke.jar
+```
+
+---
+
+## Runtime Stage
+
+The runtime stage creates a lightweight production image.
+
+Only the compiled application JAR is copied from the build stage.
+
+This keeps the final image free from:
+
+- Maven
+- Source code
+- Build cache
+- Temporary files
+
+Resulting in a smaller and more secure container image.
+
+---
+
+## Base Images
+
+### Builder Image
 
 ```dockerfile
-FROM eclipse-temurin:17-jre
+maven:3.9.9-eclipse-temurin-17
+```
+
+Provides:
+
+- Maven
+- Java 17
+- Build tools
+
+---
+
+### Runtime Image
+
+```dockerfile
+eclipse-temurin:17-jre
 ```
 
 Provides:
 
 - Java 17 Runtime
-- Lightweight Linux image
-- Production-ready JVM
-
----
-
-## Working Directory
-
-```dockerfile
-WORKDIR /app
-```
-
-Creates the application working directory inside the container.
-
----
-
-## Copy Application
-
-```dockerfile
-COPY target/*.jar app.jar
-```
-
-Copies the compiled Spring Boot application into the container.
-
----
-
-## Expose Port
-
-```dockerfile
-EXPOSE 8080
-```
-
-Documents that the application listens on port **8080**.
-
----
-
-## Container Startup
-
-```dockerfile
-ENTRYPOINT ["java","-jar","app.jar"]
-```
-
-Starts the Spring Boot application when the container launches.
+- Lightweight production image
+- Optimized JVM
 
 ---
 
 # Building the Docker Image
 
-After Maven packaging completes:
+The application can be built locally.
 
 ```bash
-./mvnw clean package
+docker build -t hello-gke:v1 .
 ```
 
-Docker builds the container image.
+Docker performs the following operations:
 
-```bash
-docker build \
--t hello-gke:v1 .
-```
-
-Docker performs:
-
-1. Read Dockerfile
-2. Download base image
-3. Copy application
-4. Create image layers
-5. Produce final image
+1. Download base images
+2. Compile the application
+3. Package the JAR
+4. Create runtime image
+5. Generate final Docker image
 
 ---
 
-# Verify Image
+# Verify Local Images
 
 List locally available images.
 
@@ -182,7 +218,7 @@ docker images
 
 Example:
 
-```
+```text
 REPOSITORY      TAG
 
 hello-gke       v1
@@ -190,15 +226,15 @@ hello-gke       v1
 
 ---
 
-# Running the Container Locally
+# Local Testing
 
-The application can be tested before deployment.
+The application can be tested locally before deployment.
 
 ```bash
 docker run -p 8080:8080 hello-gke:v1
 ```
 
-Validate:
+Verify the application:
 
 ```bash
 curl http://localhost:8080
@@ -217,33 +253,33 @@ Expected response:
 
 # Image Tagging Strategy
 
-During CI/CD the image is tagged using the Git commit SHA.
+The CI/CD pipeline tags every image using the Git commit SHA.
 
 Example:
 
-```
+```text
 hello-gke:4f6e9b2
 ```
 
-Benefits:
+Benefits include:
 
 - Immutable deployments
-- Easy rollback
 - Version traceability
-- Unique image versions
+- Easy rollback
+- Unique application versions
 
 ---
 
 # Docker in the CI/CD Pipeline
 
-The GitHub Actions workflow performs the following steps.
+The GitHub Actions workflow performs the following tasks.
 
 ```text
 Source Code
 
 ↓
 
-Maven Build
+Build Application
 
 ↓
 
@@ -251,25 +287,33 @@ Docker Build
 
 ↓
 
+Push Image
+
+↓
+
 Artifact Registry
 
 ↓
 
-Vulnerability Scan
+Trivy Image Scan
 
 ↓
 
 Helm Deployment
+
+↓
+
+Private GKE Cluster
 ```
 
-Image build:
+Example image build:
 
 ```bash
 docker build \
 -t us-central1-docker.pkg.dev/PROJECT_ID/REPOSITORY/hello-gke:${GITHUB_SHA} .
 ```
 
-Push:
+Push image:
 
 ```bash
 docker push \
@@ -278,43 +322,60 @@ us-central1-docker.pkg.dev/PROJECT_ID/REPOSITORY/hello-gke:${GITHUB_SHA}
 
 ---
 
-# Why Docker Images are Stored in Artifact Registry
+# Artifact Registry
 
-Instead of deploying directly from GitHub, images are stored in Artifact Registry.
+Docker images are stored in Google Artifact Registry.
 
-Benefits:
+Benefits include:
 
-- Central image repository
-- Version management
 - Secure image storage
-- Vulnerability scanning
-- Kubernetes integration
+- Image versioning
+- Regional repositories
+- Integration with GKE
+- Central image management
 
-Google Kubernetes Engine always pulls images from Artifact Registry.
+Kubernetes always pulls container images from Artifact Registry during deployment.
 
 ---
 
-# Best Practices Followed
+# Security
 
-The project follows several Docker best practices.
+Every image is scanned using **Trivy** before deployment.
 
-- Official Java runtime image
-- Small runtime-only image
+The scan checks for:
+
+- Critical vulnerabilities
+- High vulnerabilities
+- Medium vulnerabilities
+- Low vulnerabilities
+
+This helps identify security issues before the application is deployed.
+
+---
+
+# Best Practices Implemented
+
+The project follows Docker best practices, including:
+
+- Multi-stage Docker builds
+- Official Eclipse Temurin base images
+- Lightweight runtime image
 - Immutable image tags
 - One application per container
 - Build once, deploy everywhere
-- Images scanned before deployment
+- Container image vulnerability scanning
+- Centralized image storage in Artifact Registry
 
 ---
 
-# Current Deployment Flow
+# End-to-End Deployment Flow
 
 ```text
 Developer
 
 ↓
 
-GitHub
+GitHub Repository
 
 ↓
 
@@ -322,11 +383,15 @@ GitHub Actions
 
 ↓
 
-Maven Package
+Workload Identity Federation
 
 ↓
 
-Docker Build
+Build Spring Boot Application
+
+↓
+
+Docker Multi-stage Build
 
 ↓
 
@@ -334,29 +399,33 @@ Artifact Registry
 
 ↓
 
-Security Scan
+Trivy Image Scan
 
 ↓
 
-Helm
+Helm Deployment
 
 ↓
 
-Google Kubernetes Engine
+Private GKE Cluster
+
+↓
+
+NGINX Ingress
+
+↓
+
+HTTPS (Let's Encrypt)
+
+↓
+
+End User
 ```
 
 ---
 
 # Key Takeaways
 
-Docker provides a consistent and reproducible deployment package that eliminates environment-specific issues.
+Docker provides a consistent, portable, and reproducible deployment package for the application.
 
-By integrating Docker into the CI/CD pipeline, every application version is:
-
-- Built automatically
-- Versioned
-- Stored securely
-- Vulnerability scanned
-- Deployed consistently to Kubernetes
-
-This approach aligns with modern cloud-native application delivery practices.
+By combining multi-stage Docker builds, Artifact Registry, Trivy image scanning, Helm, and Google Kubernetes Engine, the project follows modern cloud-native deployment practices and demonstrates a production-oriented containerization workflow suitable for enterprise Kubernetes environments.

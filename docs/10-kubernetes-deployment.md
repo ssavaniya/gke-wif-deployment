@@ -1,12 +1,16 @@
-# Kubernetes Deployment
+# 10 - Kubernetes Deployment
 
 ## Overview
 
-After a successful build, security scan, and image upload, the application is deployed to Google Kubernetes Engine (GKE).
+After the application is successfully built, tested, scanned, and published to Google Artifact Registry, GitHub Actions deploys the latest version to a private Google Kubernetes Engine (GKE) cluster.
 
-The deployment process is fully automated through GitHub Actions and uses Helm to manage Kubernetes resources.
+Application deployment is managed using Helm, allowing Kubernetes resources to be version-controlled, parameterized, and updated consistently across deployments.
 
-The application runs inside a private GKE cluster while being securely exposed to users through Kubernetes Ingress.
+The deployed application is exposed externally through an NGINX Ingress Controller secured with a Let's Encrypt TLS certificate and accessible using the custom domain:
+
+```
+https://app.devopswithsachin.in
+```
 
 ---
 
@@ -19,25 +23,29 @@ A[GitHub Push]
 
 A --> B[GitHub Actions]
 
-B --> C[Build Application]
+B --> C[Maven Build]
 
-C --> D[Docker Image]
+C --> D[Docker Build]
 
 D --> E[Artifact Registry]
 
-E --> F[Security Scan]
+E --> F[Trivy Scan]
 
-F --> G[Helm Deployment]
+F --> G[Helm Upgrade]
 
-G --> H[Kubernetes Deployment]
+G --> H[Deployment]
 
-H --> I[Pods]
+H --> I[ReplicaSet]
 
-I --> J[Service]
+I --> J[Pods]
 
-J --> K[Ingress]
+J --> K[ClusterIP Service]
 
-K --> L[Users]
+K --> L[NGINX Ingress]
+
+L --> M[HTTPS]
+
+M --> N[Users]
 ```
 
 ---
@@ -49,7 +57,11 @@ Internet
 
 ↓
 
-NGINX Ingress
+HTTPS
+
+↓
+
+NGINX Ingress Controller
 
 ↓
 
@@ -65,36 +77,60 @@ ReplicaSet
 
 ↓
 
-Pods
+Spring Boot Pods
 ```
 
 ---
 
 # Kubernetes Resources
 
-The application consists of the following Kubernetes resources.
+The application is deployed using the following Kubernetes resources.
 
 | Resource | Purpose |
 |----------|---------|
+| Namespace | Logical isolation (default namespace in this project) |
 | Deployment | Manages application Pods |
-| ReplicaSet | Maintains desired number of Pods |
-| Pod | Runs the Spring Boot application |
+| ReplicaSet | Maintains desired replica count |
+| Pod | Runs the Spring Boot container |
 | ClusterIP Service | Internal load balancing |
-| Ingress | External HTTP access |
+| Ingress | External HTTPS access |
+| TLS Secret | Stores Let's Encrypt certificate |
+
+---
+
+# Helm Deployment
+
+The application is deployed using Helm.
+
+GitHub Actions executes:
+
+```bash
+helm upgrade --install hello-gke ./helm/hello-gke \
+  --set image.repository=$IMAGE_REPOSITORY \
+  --set image.tag=$IMAGE_TAG
+```
+
+Using Helm provides:
+
+- Version-controlled deployments
+- Reusable templates
+- Easy upgrades
+- Rollback capability
+- Environment-specific configuration
 
 ---
 
 # Deployment
 
-The Deployment resource defines the desired application state.
+The Deployment resource defines the desired state of the application.
 
 Responsibilities include:
 
 - Creating Pods
-- Maintaining replicas
-- Performing rolling updates
-- Recovering failed Pods
-- Supporting scaling
+- Maintaining replica count
+- Rolling updates
+- Automatic recovery
+- Scaling
 
 Example:
 
@@ -102,21 +138,21 @@ Example:
 kind: Deployment
 ```
 
-Deployment ensures that the desired number of application instances are always available.
+The Deployment continuously ensures that the required number of Pods remain available.
 
 ---
 
 # ReplicaSet
 
-ReplicaSets are automatically created by Deployments.
+The Deployment automatically creates and manages a ReplicaSet.
 
-Responsibilities:
+Responsibilities include:
 
-- Maintain the desired replica count
-- Replace failed Pods
-- Ensure high availability
+- Maintaining the desired number of Pods
+- Replacing failed Pods
+- Supporting rolling updates
 
-The ReplicaSet is managed automatically and is not modified directly.
+ReplicaSets are managed automatically by Kubernetes and are not modified directly.
 
 ---
 
@@ -124,40 +160,36 @@ The ReplicaSet is managed automatically and is not modified directly.
 
 Pods are the smallest deployable unit in Kubernetes.
 
-Each Pod in this project contains:
+Each Pod contains:
 
 - Spring Boot application
 - Java 17 runtime
 - Docker container
 
-Example verification:
+Useful commands:
 
 ```bash
 kubectl get pods
 ```
 
-Detailed information:
-
 ```bash
-kubectl describe pod POD_NAME
+kubectl describe pod <POD_NAME>
 ```
 
-Application logs:
-
 ```bash
-kubectl logs POD_NAME
+kubectl logs <POD_NAME>
 ```
 
 ---
 
 # ClusterIP Service
 
-The application is exposed internally using a ClusterIP Service.
+The application is exposed internally through a ClusterIP Service.
 
-Responsibilities:
+Responsibilities include:
 
-- Stable internal IP
-- Load balancing
+- Stable internal endpoint
+- Load balancing across Pods
 - Service discovery
 
 Verify:
@@ -172,44 +204,65 @@ Endpoints:
 kubectl get endpoints
 ```
 
-Pods communicate through the Service rather than directly with individual Pods.
+Application traffic always flows through the Service rather than directly to Pods.
 
 ---
 
-# Helm Deployment
+# NGINX Ingress
 
-Application deployment is performed using Helm.
+The application is exposed externally using the NGINX Ingress Controller.
 
-GitHub Actions executes:
+The Ingress performs:
 
-```bash
-helm upgrade --install hello-gke ./helm/hello-gke \
-  --set image.repository=IMAGE_REPOSITORY \
-  --set image.tag=IMAGE_TAG
+- HTTP routing
+- Reverse proxy
+- Load balancing
+- TLS termination
+- Host-based routing
+
+Current host:
+
+```
+app.devopswithsachin.in
 ```
 
-Benefits:
+Verify:
 
-- Declarative deployments
-- Easy upgrades
-- Rollbacks
-- Configuration management
-- Reusable templates
+```bash
+kubectl get ingress
+```
+
+---
+
+# HTTPS with Let's Encrypt
+
+TLS certificates are automatically managed using cert-manager.
+
+Benefits include:
+
+- Automated certificate issuance
+- Automatic renewal
+- Trusted public certificates
+- Secure HTTPS communication
+
+The Ingress references a Kubernetes TLS Secret that stores the certificate issued by Let's Encrypt.
 
 ---
 
 # Rolling Updates
 
-When a new Docker image is available:
+Whenever a new image is published, Helm updates the Deployment.
 
-1. Helm updates the Deployment.
-2. Kubernetes creates new Pods.
-3. Traffic is shifted gradually.
-4. Old Pods are terminated.
+Kubernetes performs a rolling update by:
 
-This process minimizes downtime.
+1. Creating new Pods
+2. Waiting for them to become Ready
+3. Gradually redirecting traffic
+4. Removing old Pods
 
-Deployment status:
+This minimizes downtime during deployments.
+
+Verify rollout:
 
 ```bash
 kubectl rollout status deployment/hello-gke
@@ -223,31 +276,11 @@ kubectl rollout restart deployment hello-gke
 
 ---
 
-# Scaling
-
-The Deployment can be scaled manually.
-
-Example:
-
-```bash
-kubectl scale deployment hello-gke --replicas=3
-```
-
-Verification:
-
-```bash
-kubectl get pods
-```
-
-Kubernetes automatically creates additional Pods to match the requested replica count.
-
----
-
 # Image Updates
 
-Each Git commit produces a new Docker image.
+Each Git commit generates a uniquely tagged Docker image.
 
-GitHub Actions updates Helm with:
+GitHub Actions automatically updates the Helm deployment with:
 
 ```
 image.repository
@@ -258,25 +291,43 @@ image.tag
 Example:
 
 ```
-hello-gke:8c9b27e
+hello-gke:cb4518e
 ```
 
-Helm deploys the new image without modifying the Kubernetes manifests.
+This ensures every deployment uses an immutable container image.
 
 ---
 
 # Deployment Verification
 
-The pipeline verifies deployment using:
+Useful verification commands:
 
 ```bash
 kubectl get deployments
+```
 
+```bash
 kubectl get pods
+```
 
+```bash
 kubectl get svc
+```
 
+```bash
 kubectl get ingress
+```
+
+```bash
+kubectl get certificates
+```
+
+```bash
+kubectl get certificaterequests
+```
+
+```bash
+kubectl get challenges
 ```
 
 Helm release:
@@ -285,11 +336,9 @@ Helm release:
 helm list
 ```
 
-Successful rollout confirms that the application is available.
-
 ---
 
-# Failure Recovery
+# Self-Healing
 
 If a Pod crashes:
 
@@ -302,51 +351,43 @@ ReplicaSet
 
 ↓
 
-Create New Pod
+Create Replacement Pod
 ```
 
-If a node fails:
+If a node becomes unavailable:
 
 ```text
 Node Failure
 
 ↓
 
-Deployment
+Kubernetes Scheduler
 
 ↓
 
-Schedule Pod on Healthy Node
+Pod Scheduled on Healthy Node
 ```
 
-This provides self-healing capabilities.
+These self-healing capabilities improve application availability.
 
 ---
 
-# Current Application Flow
+# End-to-End Request Flow
 
 ```text
-Developer
+User
 
 ↓
 
-GitHub
+https://app.devopswithsachin.in
 
 ↓
 
-GitHub Actions
+NGINX Ingress Controller
 
 ↓
 
-Docker Image
-
-↓
-
-Artifact Registry
-
-↓
-
-Helm
+ClusterIP Service
 
 ↓
 
@@ -358,42 +399,39 @@ ReplicaSet
 
 ↓
 
-Pods
-
-↓
-
-ClusterIP Service
-
-↓
-
-NGINX Ingress
-
-↓
-
-Users
+Spring Boot Pods
 ```
 
 ---
 
-# Best Practices Followed
+# Best Practices Implemented
 
-This project follows several Kubernetes deployment best practices.
+This project follows Kubernetes deployment best practices:
 
-- Declarative deployments
-- Helm package management
+- Private GKE cluster
+- Helm-based deployments
 - Rolling updates
-- Immutable container images
+- Immutable Docker images
 - ClusterIP networking
-- Ingress for external access
+- NGINX Ingress Controller
+- HTTPS using Let's Encrypt
+- Automated TLS renewal
 - Self-healing Deployments
-- Version-controlled configuration
+- Version-controlled Kubernetes manifests
 
 ---
 
 # Key Takeaways
 
-Kubernetes Deployments provide a reliable and automated mechanism for running containerized applications.
+The application is deployed to a private Google Kubernetes Engine cluster using Helm and GitHub Actions.
 
-Combined with Helm and GitHub Actions, the deployment process becomes fully automated, repeatable, and production-ready.
+Each deployment is fully automated and includes:
 
-Every successful pipeline execution results in a secure, versioned, and highly available application running on Google Kubernetes Engine.
+- Automated image deployment
+- Rolling updates
+- Self-healing workloads
+- Secure HTTPS access
+- Custom domain integration
+- Automated TLS certificate management
+
+This deployment model closely resembles the Kubernetes application deployment strategy used in modern production environments.

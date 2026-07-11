@@ -1,27 +1,29 @@
-# Artifact Registry
+# 08 - Artifact Registry
 
 ## Overview
 
 Google Artifact Registry is used as the centralized container image repository for this project.
 
-Every Docker image built by the GitHub Actions pipeline is pushed to Artifact Registry before deployment to Google Kubernetes Engine (GKE).
+Every Docker image built by the GitHub Actions pipeline is pushed to Artifact Registry before being deployed to the private Google Kubernetes Engine (GKE) cluster.
 
-Artifact Registry serves as the single source of truth for all application images deployed across environments.
+Artifact Registry acts as the single source of truth for all container images used throughout the deployment lifecycle.
+
+The repository was created manually using the Google Cloud Console and is integrated with the CI/CD pipeline through Workload Identity Federation.
 
 ---
 
 # Why Artifact Registry?
 
-Instead of deploying images directly from a developer machine or GitHub runner, the project stores all images in a managed container registry.
+Instead of deploying images directly from a developer workstation or GitHub Actions runner, all application images are stored in a secure, managed container registry.
 
 Benefits include:
 
 - Centralized image management
 - Secure image storage
 - Version control
-- IAM integration
-- Vulnerability scanning
-- Native Kubernetes support
+- IAM-based access control
+- Native integration with GKE
+- Reliable image distribution
 
 ---
 
@@ -38,9 +40,9 @@ GitHubActions --> DockerBuild
 
 DockerBuild --> ArtifactRegistry
 
-ArtifactRegistry --> SecurityScan
+ArtifactRegistry --> TrivyScan
 
-ArtifactRegistry --> GKE
+ArtifactRegistry --> PrivateGKE
 ```
 
 ---
@@ -49,133 +51,116 @@ ArtifactRegistry --> GKE
 
 The project uses a Docker repository hosted in Google Artifact Registry.
 
-Example:
+Current configuration:
 
-```
-Project
-
-proserv-task02
-
-Region
-
-us-central1
-
-Repository
-
-springboot-repo
-```
+| Property | Value |
+|----------|-------|
+| Project | proserv-task01 |
+| Region | us-central1 |
+| Repository | my-repo |
+| Format | Docker |
 
 Docker image path:
 
-```
-us-central1-docker.pkg.dev/proserv-task02/springboot-repo/hello-gke
+```text
+us-central1-docker.pkg.dev/proserv-task01/my-repo/hello-gke
 ```
 
 ---
 
 # Repository Structure
 
-```
+```text
 Artifact Registry
 
-└── springboot-repo
-      │
-      ├── hello-gke:v1
+└── my-repo
+
       ├── hello-gke:latest
-      ├── hello-gke:4f6e9b2
-      ├── hello-gke:ab51e73
+
+      ├── hello-gke:a73f9d2
+
+      ├── hello-gke:cb4518e
+
+      ├── hello-gke:f9e6c11
+
       └── ...
 ```
 
-Each Git commit produces a new immutable image.
+Each Git commit generates a new immutable Docker image.
 
 ---
 
 # Authentication
 
-Before pushing images, Docker must authenticate with Artifact Registry.
+The GitHub Actions pipeline authenticates to Google Cloud using **Workload Identity Federation (WIF)**.
 
-The pipeline performs:
+After authentication, Docker is configured to communicate with Artifact Registry.
 
 ```bash
 gcloud auth configure-docker us-central1-docker.pkg.dev
 ```
 
-This configures Docker to use Google Cloud credentials when communicating with Artifact Registry.
-
-Authentication itself is provided through Workload Identity Federation.
-
-No Docker credentials or service account keys are stored in GitHub.
+This allows Docker to push images securely without storing service account keys or Docker credentials.
 
 ---
 
-# Image Tagging Strategy
+# Building the Image
 
-Images are tagged using the Git commit SHA.
-
-Example:
-
-```
-hello-gke:8c9b27e
-```
-
-Benefits:
-
-- Immutable deployments
-- Easy rollback
-- Full deployment traceability
-- Version history
-
----
-
-# Docker Build
-
-The pipeline builds the container image.
+After the Spring Boot application is packaged, GitHub Actions builds the Docker image.
 
 Example:
 
 ```bash
 docker build \
--t us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${GITHUB_SHA} .
+-t us-central1-docker.pkg.dev/${PROJECT_ID}/my-repo/hello-gke:${GITHUB_SHA} .
 ```
+
+The image is tagged using the Git commit SHA to ensure each deployment is uniquely versioned.
 
 ---
 
-# Image Push
+# Pushing Images
 
-After a successful build, the image is uploaded to Artifact Registry.
-
-Example:
+Once the build completes successfully, the image is uploaded to Artifact Registry.
 
 ```bash
 docker push \
-us-central1-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${GITHUB_SHA}
+us-central1-docker.pkg.dev/${PROJECT_ID}/my-repo/hello-gke:${GITHUB_SHA}
 ```
 
-Once uploaded, the image becomes available for Kubernetes deployments.
+After the push completes, the image becomes available for deployment to the Kubernetes cluster.
+
+---
+
+# Image Versioning
+
+Images are tagged using the Git commit SHA.
+
+Example:
+
+```text
+hello-gke:8c9b27e
+```
+
+Benefits include:
+
+- Immutable deployments
+- Deployment traceability
+- Easy rollback
+- Version history
 
 ---
 
 # Verifying Images
 
-List all stored images.
+Images stored in Artifact Registry can be listed using:
 
 ```bash
 gcloud artifacts docker images list \
-us-central1-docker.pkg.dev/proserv-task02/springboot-repo
+us-central1-docker.pkg.dev/proserv-task01/my-repo
 ```
 
-Example output:
-
-```
-hello-gke
-
-hello-gke:v1
-
-hello-gke:8c9b27e
-
-hello-gke:f6d30ab
-```
+This command displays all available container images and their associated tags.
 
 ---
 
@@ -183,7 +168,7 @@ hello-gke:f6d30ab
 
 Google Kubernetes Engine never builds application images.
 
-Instead, Kubernetes pulls images directly from Artifact Registry.
+Instead, Kubernetes pulls container images directly from Artifact Registry during deployment.
 
 Deployment flow:
 
@@ -192,7 +177,7 @@ GitHub Actions
 
 ↓
 
-Docker Image
+Docker Build
 
 ↓
 
@@ -200,7 +185,11 @@ Artifact Registry
 
 ↓
 
-Kubernetes Deployment
+Helm Deployment
+
+↓
+
+Private GKE Cluster
 
 ↓
 
@@ -211,85 +200,71 @@ Running Pods
 
 # IAM Permissions
 
-The deployment service account requires permission to push images.
+The GitHub Actions service account requires permission to push images into Artifact Registry.
 
-Typical IAM role:
+Required role:
 
 - Artifact Registry Writer
 
-Kubernetes nodes require permission to pull images.
-
-These permissions are handled automatically through the node service account.
+The GKE node service account automatically pulls images from Artifact Registry during application deployment.
 
 ---
 
-# Integration with Vulnerability Scanning
+# Security
 
-Artifact Registry integrates with Google Artifact Analysis.
+After an image is pushed, the CI/CD pipeline performs a **Trivy vulnerability scan** before deployment.
 
-After each image upload:
+The scan checks for:
 
-```
-Docker Push
+- Critical vulnerabilities
+- High vulnerabilities
+- Medium vulnerabilities
+- Low vulnerabilities
 
-↓
-
-Artifact Registry
-
-↓
-
-Automatic Vulnerability Scan
-
-↓
-
-Security Report
-
-↓
-
-Deployment Decision
-```
-
-This allows the pipeline to reject insecure images before deployment.
+If critical or high-severity vulnerabilities are detected, the deployment pipeline can be configured to stop before deployment.
 
 ---
 
 # Advantages
 
-Artifact Registry provides several benefits.
+Artifact Registry provides several operational benefits:
 
 - Fully managed by Google Cloud
+- Secure private repositories
 - Native IAM integration
 - Regional repositories
-- Secure image storage
-- Built-in vulnerability scanning
-- Supports Docker and OCI images
-- Easy integration with GKE
+- Fast image retrieval
+- Seamless integration with GKE
+- Centralized container management
 
 ---
 
-# Best Practices Followed
+# Best Practices Implemented
 
-This project follows several Artifact Registry best practices.
+The project follows several Artifact Registry best practices:
 
+- Private Docker repository
 - Regional repository
-- Immutable image tags
-- Git commit versioning
-- Private repository
 - IAM-based authentication
-- Automatic vulnerability scanning
+- Workload Identity Federation
+- Immutable image tags
+- Git commit-based versioning
 - Images deployed only from Artifact Registry
+- Container images scanned before deployment
 
 ---
 
 # Key Takeaways
 
-Artifact Registry acts as the secure container repository for the entire deployment pipeline.
+Artifact Registry serves as the centralized repository for all container images used by the platform.
 
-Every image built by GitHub Actions is:
+Every application image is:
 
-- Versioned
-- Stored securely
-- Automatically scanned
-- Retrieved by Kubernetes during deployment
+- Built automatically by GitHub Actions
+- Authenticated using Workload Identity Federation
+- Stored securely in Artifact Registry
+- Tagged with the Git commit SHA
+- Scanned for vulnerabilities using Trivy
+- Pulled by the private GKE cluster during deployment
 
-Using Artifact Registry ensures consistent, secure, and repeatable application deployments across environments.
+This approach provides a secure, repeatable, and production-oriented container image management workflow that aligns with modern cloud-native application delivery practices.

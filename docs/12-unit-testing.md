@@ -1,14 +1,14 @@
-# Unit Testing
+# 12 - Unit Testing
 
 ## Overview
 
 Unit testing is the first quality gate in the CI/CD pipeline.
 
-Before an application is packaged into a Docker image, automated tests verify that the application's business logic behaves as expected.
+Before the application is packaged into a Docker image, automated tests verify that the application's business logic behaves as expected.
 
-If any unit test fails, the pipeline stops immediately and the application is not deployed.
+If any unit test fails, the GitHub Actions workflow stops immediately, preventing Docker image creation and deployment to Google Kubernetes Engine (GKE).
 
-This prevents defective code from reaching production.
+This ensures that only verified code progresses through the CI/CD pipeline.
 
 ---
 
@@ -24,7 +24,7 @@ Examples include:
 - Controllers
 - Utility functions
 
-Rather than testing the entire application, unit tests focus on individual pieces of functionality.
+Rather than testing the entire application, unit tests focus on validating individual pieces of functionality.
 
 ---
 
@@ -96,7 +96,7 @@ FAIL
 Pipeline Stops
 ```
 
-This allows defects to be identified before deployment.
+By identifying defects early, unit testing reduces the risk of deploying faulty code.
 
 ---
 
@@ -109,13 +109,14 @@ The project uses the standard Spring Boot testing framework.
 | JUnit 5 | Test execution |
 | Mockito | Mock dependencies |
 | Spring Boot Test | Spring testing support |
-| Maven Surefire | Test execution during build |
+| Maven Surefire Plugin | Executes unit tests |
+| JaCoCo | Code coverage reporting |
 
 ---
 
-# Test Structure
+# Project Structure
 
-Application code:
+Application source code:
 
 ```
 src/main/java
@@ -127,7 +128,7 @@ Unit tests:
 src/test/java
 ```
 
-Typical structure:
+Example:
 
 ```
 HelloController
@@ -139,28 +140,22 @@ HelloControllerTest
 
 ---
 
-# Example
+# What is Tested?
 
-Controller:
+The project currently includes unit tests for the application's REST controller.
 
-```java
-@GetMapping("/")
-public Message hello() {
-    ...
-}
-```
+Typical validations include:
 
-Unit test verifies:
-
-- HTTP response
-- Message value
+- HTTP response status
+- Response body
+- Message content
 - Environment value
 
 Expected response:
 
 ```json
 {
-  "message":"Hello from Ingress",
+  "message":"Hello from GKE",
   "environment":"dev"
 }
 ```
@@ -169,7 +164,7 @@ Expected response:
 
 # Running Tests
 
-Execute all tests:
+Execute all unit tests:
 
 ```bash
 ./mvnw test
@@ -178,16 +173,16 @@ Execute all tests:
 Run a specific test:
 
 ```bash
-./mvnw test \
--Dtest=HelloControllerTest
+./mvnw test -Dtest=HelloControllerTest
 ```
 
-Generate package without tests:
+Package the application without running tests:
 
 ```bash
-./mvnw package \
--DskipTests
+./mvnw package -DskipTests
 ```
+
+> Skipping tests is useful during local development but should never be used in the CI/CD pipeline.
 
 ---
 
@@ -198,62 +193,84 @@ Maven automatically generates test reports.
 Location:
 
 ```
-target/surefire-reports
+target/surefire-reports/
 ```
 
-View report:
+JaCoCo generates code coverage reports in:
 
-```bash
-cat target/surefire-reports/*.txt
 ```
+target/site/jacoco/
+```
+
+These reports help measure how much of the application code is exercised by the unit tests.
 
 ---
 
 # CI/CD Integration
 
-The GitHub Actions pipeline executes unit tests before building the Docker image.
+GitHub Actions automatically executes unit tests before building the Docker image.
 
-Pipeline sequence:
+Pipeline flow:
 
 ```text
-Checkout
+Checkout Source
 
 ↓
 
-Unit Tests
+Authenticate to Google Cloud
 
 ↓
 
-Build Application
+Run Unit Tests
 
 ↓
 
-Docker Build
+Generate JaCoCo Coverage
 
 ↓
 
-Artifact Registry
+Build Docker Image
 
 ↓
 
-Security Scan
+Push Artifact Registry
 
 ↓
 
-Deployment
+Trivy Scan
+
+↓
+
+Helm Deployment
 ```
 
-If unit tests fail:
+If any unit test fails:
 
 - Docker image is not built
-- Artifact Registry is not updated
-- Kubernetes deployment does not occur
+- Image is not pushed to Artifact Registry
+- Deployment to Kubernetes is skipped
+
+This fail-fast approach prevents defective code from progressing through the deployment pipeline.
+
+---
+
+# Code Coverage
+
+The project uses JaCoCo to generate code coverage reports.
+
+Coverage reports help developers understand:
+
+- Which classes are tested
+- Which methods are executed
+- Areas requiring additional tests
+
+Coverage reports are generated automatically during the GitHub Actions workflow.
 
 ---
 
 # Benefits
 
-Automated unit testing provides several advantages.
+Automated unit testing provides several advantages:
 
 - Detects defects early
 - Prevents regressions
@@ -264,33 +281,34 @@ Automated unit testing provides several advantages.
 
 ---
 
-# Best Practices Followed
+# Best Practices Implemented
 
-The project follows several unit testing best practices.
+This project follows unit testing best practices, including:
 
 - Automated execution
-- Tests run on every commit
-- Fail-fast pipeline
+- Tests executed on every pipeline run
+- Fail-fast CI/CD pipeline
 - Separate test source directory
 - Maven integration
+- JaCoCo code coverage
 - No deployment if tests fail
 
 ---
 
-# Future Enhancements
+# Related Documentation
 
-Potential improvements include:
+This document focuses on unit testing.
 
-- Increase code coverage
-- Mock external services
-- Parameterized tests
-- Integration tests
-- Performance tests
+End-to-end API validation after deployment is covered in:
+
+**13-functional-testing.md**
 
 ---
 
 # Key Takeaways
 
-Unit testing serves as the first quality gate of the deployment pipeline.
+Unit testing is the first quality gate in the CI/CD pipeline.
 
-Every code change is validated before packaging the application into a Docker image, ensuring that only tested and verified code proceeds to the remaining CI/CD stages.
+Every code change is validated before a Docker image is created, ensuring that only tested and verified code proceeds to vulnerability scanning and Kubernetes deployment.
+
+This approach improves software quality, increases deployment confidence, and supports modern Continuous Integration practices.
