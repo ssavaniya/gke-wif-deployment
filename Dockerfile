@@ -1,13 +1,19 @@
-FROM eclipse-temurin:17-jre-jammy
-
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Build Stage
+FROM maven:3.9.9-eclipse-temurin-17 AS builder
 
 WORKDIR /app
 
-COPY target/*.jar app.jar
+COPY . .
+
+RUN ./mvnw clean package -DskipTests
+
+# Runtime Stage
+FROM eclipse-temurin:17-jre
+
+WORKDIR /app
+
+COPY --from=builder /app/target/*.jar app.jar
+
+EXPOSE 8080
 
 ENTRYPOINT ["java","-jar","app.jar"]
