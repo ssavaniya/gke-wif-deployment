@@ -96,7 +96,7 @@ jobs:
             trivy-db-
 
       - name: Run Trivy Scan (SARIF)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           image-ref: ${{ env.IMAGE_URI }}:${{ github.sha }}
           format: sarif
@@ -104,7 +104,7 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           scanners: vuln
-          trivyignores: .trivyignore
+          trivy-config: trivy.yaml
         continue-on-error: true
 
       - name: Upload SARIF Report
@@ -113,7 +113,7 @@ jobs:
           sarif_file: trivy-results.sarif
 
       - name: Generate Trivy JSON Report
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           image-ref: ${{ env.IMAGE_URI }}:${{ github.sha }}
           format: json
@@ -121,7 +121,8 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           scanners: vuln
-          trivyignores: .trivyignore
+          trivy-config: trivy.yaml
+        
 
       - name: Upload Trivy Report
         uses: actions/upload-artifact@v4
@@ -130,16 +131,16 @@ jobs:
           path: trivy-report.json
 
       - name: Enforce Security Policy
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           image-ref: ${{ env.IMAGE_URI }}:${{ github.sha }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           scanners: vuln
+          trivy-config: trivy.yaml
           exit-code: "1"
-          trivyignores: .trivyignore
-
-      - name: Configure Docker
+        
+     - name: Configure Docker
         run: |
           gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
