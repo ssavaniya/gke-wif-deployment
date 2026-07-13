@@ -104,6 +104,7 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           scanners: vuln
+          trivyignores: .trivyignore
         continue-on-error: true
 
       - name: Upload SARIF Report
@@ -120,6 +121,7 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           scanners: vuln
+          trivyignores: .trivyignore
 
       - name: Upload Trivy Report
         uses: actions/upload-artifact@v4
@@ -135,6 +137,7 @@ jobs:
           ignore-unfixed: true
           scanners: vuln
           exit-code: "1"
+          trivyignores: .trivyignore
 
       - name: Configure Docker
         run: |
