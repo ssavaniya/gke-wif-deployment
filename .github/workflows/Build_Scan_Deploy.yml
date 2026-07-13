@@ -95,33 +95,30 @@ jobs:
           restore-keys: |
             trivy-db-
 
-      - name: Run Trivy Scan (SARIF)
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          image-ref: ${{ env.IMAGE_URI }}:${{ github.sha }}
-          format: sarif
-          output: trivy-results.sarif
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          scanners: vuln
-          trivy-config: trivy.yaml
-        continue-on-error: true
+      - name: Run Trivy SARIF Scan
+        run: |
+          trivy image \
+            --ignorefile .trivyignore \
+            --format sarif \
+            --output trivy-results.sarif \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            ${{ env.IMAGE_URI }}:${{ github.sha }}
 
       - name: Upload SARIF Report
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: trivy-results.sarif
+          sarif_file: trivy-result.sarif
 
-      - name: Generate Trivy JSON Report
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          image-ref: ${{ env.IMAGE_URI }}:${{ github.sha }}
-          format: json
-          output: trivy-report.json
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          scanners: vuln
-          trivy-config: trivy.yaml
+      - name: Run Trivy JSON Scan
+        run: |
+          trivy image \
+           --ignorefile .trivyignore \
+           --format json \
+           --output trivy-report.json \
+           --severity HIGH,CRITICAL \
+           --ignore-unfixed \
+           ${{ env.IMAGE_URI }}:${{ github.sha }}
         
 
       - name: Upload Trivy Report
@@ -131,16 +128,15 @@ jobs:
           path: trivy-report.json
 
       - name: Enforce Security Policy
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          image-ref: ${{ env.IMAGE_URI }}:${{ github.sha }}
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          scanners: vuln
-          trivy-config: trivy.yaml
-          exit-code: "1"
+        run: |
+          trivy image \
+           --ignorefile .trivyignore \
+           --severity HIGH,CRITICAL \
+           --ignore-unfixed \
+           --exit-code 1 \
+           ${{ env.IMAGE_URI }}:${{ github.sha }}
         
-     - name: Configure Docker
+      - name: Configure Docker
         run: |
           gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
