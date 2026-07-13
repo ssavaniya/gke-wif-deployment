@@ -175,44 +175,23 @@ jobs:
           echo "===== Describe Service ====="
           kubectl describe svc hello-gke
 
-      - name: Port Forward
+    
+      - name: Verify Application
         run: |
-          kubectl port-forward svc/hello-gke 8080:80 >/tmp/pf.log 2>&1 &
-          sleep 30
-
-          echo "===== Port Forward Log ====="
-          cat /tmp/pf.log
-
-      - name: Verify Port Forward
-        run: |
-          ps -ef | grep port-forward
-
-          echo "===== Listening Ports ====="
-          ss -lntp | grep 8080 || true
-
-          echo "===== Curl ====="
-          curl -v http://localhost:8080/
-
-          echo "===== Port Forward Log ====="
-          cat /tmp/pf.log
-
-
-      - name: Verify Application Manually
-        run: |
-          curl -v http://localhost:8080
-
-      - name: Set BASE_URL
-        run: |
-          echo "BASE_URL=localhost:8080" >> $GITHUB_ENV
+          kubectl run curl-test \
+          --image=curlimages/curl:8.12.1 \
+          --rm -i --restart=Never \
+          -- curl -f http://hello-gke.default.svc.cluster.local
+  
 
       - name: Functional Test
         run: |
-          docker run --rm \
-            --network host \
-            -v ${{ github.workspace }}/tests:/etc/newman \
-            postman/newman \
-            run /etc/newman/hello-gke-functional.postman_collection.json \
-            --env-var baseUrl=http://${BASE_URL}
+         docker run --rm \
+           --network host \
+           -v ${{ github.workspace }}/tests:/etc/newman \
+           postman/newman \
+           run /etc/newman/hello-gke-functional.postman_collection.json \
+           --env-var baseUrl=http://hello-gke.default.svc.cluster.local
 
       - name: Verify Deployment
         run: |
