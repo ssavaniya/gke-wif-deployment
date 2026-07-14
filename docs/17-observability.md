@@ -1112,4 +1112,563 @@ Completed successfully:
 
 ```
 
+# Observability - Part 3: Grafana Dashboard and Visualization
+
+## 1. Overview
+
+Monitoring becomes much more powerful when metrics are presented visually.
+
+Although Prometheus stores all metrics, reading them directly from PromQL queries is not practical during day-to-day operations.
+
+Grafana solves this problem by providing interactive dashboards that visualize metrics in real time.
+
+In our GKE project, Grafana was deployed as part of the **kube-prometheus-stack** Helm chart.
+
+The monitoring architecture now looks like this:
+
+```
+                Users
+                  |
+                  |
+             Grafana Dashboard
+                  |
+                  |
+            Prometheus Server
+                  |
+        -------------------------
+        |                       |
+kube-state-metrics         cAdvisor
+        |                       |
+        +----------+------------+
+                   |
+             Kubernetes Cluster
+```
+
 ---
+
+# 2. Why Grafana?
+
+Without Grafana:
+
+* Metrics must be queried manually
+* Difficult to identify trends
+* Difficult to correlate CPU, Memory and Pods
+* Time consuming during incidents
+
+With Grafana:
+
+* Real-time dashboards
+* Historical graphs
+* Alert visualization
+* Team sharing
+* Interactive filtering
+* Easy troubleshooting
+
+---
+
+# 3. Grafana Components
+
+Grafana itself does **not** collect metrics.
+
+Instead, it queries data sources.
+
+Example:
+
+```
+Grafana
+    |
+    |
+Prometheus
+    |
+    |
+Metrics
+```
+
+Supported data sources include:
+
+* Prometheus
+* Loki
+* Elasticsearch
+* InfluxDB
+* Cloud Monitoring
+* MySQL
+* PostgreSQL
+
+For this project we are using:
+
+**Prometheus**
+
+---
+
+# 4. Accessing Grafana
+
+Check Grafana pod:
+
+```bash
+kubectl get pods -n monitoring | grep grafana
+```
+
+Example:
+
+```
+monitoring-grafana
+```
+
+Check service:
+
+```bash
+kubectl get svc -n monitoring | grep grafana
+```
+
+Example:
+
+```
+monitoring-grafana
+ClusterIP
+80/TCP
+```
+
+---
+
+# 5. Port Forward Grafana
+
+Expose Grafana locally.
+
+```bash
+kubectl port-forward svc/monitoring-grafana \
+3000:80 \
+-n monitoring
+```
+
+Open:
+
+```
+http://localhost:3000
+```
+
+---
+
+# 6. Login
+
+Retrieve admin password:
+
+```bash
+kubectl get secret \
+monitoring-grafana \
+-n monitoring \
+-o jsonpath="{.data.admin-password}" \
+| base64 -d
+```
+
+Username:
+
+```
+admin
+```
+
+Password:
+
+```
+<decoded password>
+```
+
+---
+
+# 7. Verify Prometheus Data Source
+
+Navigate:
+
+```
+Connections
+    |
+Data Sources
+```
+
+Verify:
+
+```
+Prometheus
+```
+
+Status should show:
+
+```
+Healthy
+```
+
+If healthy:
+
+Grafana can successfully communicate with Prometheus.
+
+---
+
+# 8. Built-in Dashboards
+
+The kube-prometheus-stack Helm chart automatically installs several dashboards.
+
+Common dashboards include:
+
+* Kubernetes Cluster Overview
+* Kubernetes Pods
+* Kubernetes Nodes
+* Kubernetes Deployments
+* Node Exporter Full
+* Kubernetes Networking
+
+These dashboards provide:
+
+* CPU usage
+* Memory usage
+* Pod count
+* Node health
+* Filesystem usage
+* Network traffic
+* Cluster status
+
+---
+
+# 9. Kubernetes Cluster Dashboard
+
+Typical metrics displayed:
+
+## Node CPU
+
+```
+CPU %
+```
+
+Shows:
+
+* Total CPU
+* Per-node CPU
+* Historical usage
+
+---
+
+## Node Memory
+
+Shows:
+
+* Used memory
+* Available memory
+* Cached memory
+
+Useful for identifying memory pressure.
+
+---
+
+## Disk Usage
+
+Displays:
+
+* Filesystem utilization
+* Available storage
+* Disk IO
+
+---
+
+## Network
+
+Displays:
+
+* Incoming traffic
+* Outgoing traffic
+* Packet rates
+* Errors
+
+---
+
+# 10. Pod Dashboard
+
+Useful metrics:
+
+* Pod CPU
+* Pod Memory
+* Restarts
+* Running Pods
+* Pending Pods
+* Failed Pods
+
+Example:
+
+```
+hello-gke
+
+CPU
+
+Memory
+
+Restarts
+
+Status
+```
+
+---
+
+# 11. Deployment Dashboard
+
+Useful for application monitoring.
+
+Shows:
+
+* Desired replicas
+* Available replicas
+* Updated replicas
+* Unavailable replicas
+
+For our application:
+
+```
+hello-gke
+```
+
+we can immediately identify:
+
+* Scale up
+* Scale down
+* Deployment failures
+
+---
+
+# 12. Node Exporter Dashboard
+
+Node Exporter collects operating system metrics.
+
+Useful metrics include:
+
+* CPU
+* Memory
+* Load Average
+* Disk Usage
+* Network
+* Filesystem
+* System Uptime
+
+These metrics are collected from every Kubernetes node.
+
+---
+
+# 13. Prometheus Dashboard
+
+Grafana also provides dashboards for Prometheus itself.
+
+Useful metrics include:
+
+* Targets
+* Scrape duration
+* Scrape failures
+* Query duration
+* Active alerts
+
+---
+
+# 14. Viewing Alerts
+
+Grafana can display active alerts.
+
+Navigate:
+
+```
+Alerting
+
+↓
+
+Alert Rules
+```
+
+Example:
+
+```
+HelloGKEApplicationDown
+
+State
+
+Firing
+```
+
+This allows operators to quickly identify:
+
+* Alert severity
+* Alert status
+* Alert history
+
+---
+
+# 15. Correlating Metrics
+
+One of Grafana's biggest advantages is correlation.
+
+Example:
+
+Application becomes slow.
+
+Instead of checking everything manually:
+
+```
+CPU
+
+↓
+
+Memory
+
+↓
+
+Pods
+
+↓
+
+Nodes
+
+↓
+
+Network
+```
+
+Grafana displays all these metrics together.
+
+This significantly reduces troubleshooting time.
+
+---
+
+# 16. Verification
+
+Verify Grafana pod:
+
+```bash
+kubectl get pods -n monitoring
+```
+
+Verify service:
+
+```bash
+kubectl get svc -n monitoring
+```
+
+Verify login.
+
+Verify Prometheus data source.
+
+Open dashboards.
+
+Confirm graphs are updating every few seconds.
+
+---
+
+# 17. Troubleshooting
+
+## Problem
+
+Grafana not opening
+
+Check:
+
+```bash
+kubectl get pods -n monitoring
+```
+
+Pod should be Running.
+
+---
+
+## Problem
+
+Dashboard shows "No Data"
+
+Verify Prometheus:
+
+```
+Healthy
+```
+
+Check data source.
+
+---
+
+## Problem
+
+Prometheus Data Source unhealthy
+
+Verify:
+
+```bash
+kubectl get svc -n monitoring
+```
+
+Confirm Prometheus service exists.
+
+---
+
+## Problem
+
+Graphs stopped updating
+
+Check:
+
+* Prometheus running
+* Targets UP
+* Time range
+* Dashboard variables
+
+---
+
+# 18. Best Practices
+
+✔ Organize dashboards by application
+
+✔ Keep dashboards simple
+
+✔ Use meaningful titles
+
+✔ Add units to every graph
+
+✔ Create separate dashboards for:
+
+* Infrastructure
+* Kubernetes
+* Applications
+* Networking
+* Databases
+
+Avoid putting everything into one dashboard.
+
+---
+
+# 19. Current Project Status
+
+Successfully implemented:
+
+✅ kube-prometheus-stack
+
+✅ Prometheus
+
+✅ Alertmanager
+
+✅ Gmail SMTP Alerting
+
+✅ Grafana
+
+✅ Default Kubernetes Dashboards
+
+✅ Prometheus Data Source
+
+The observability platform now provides:
+
+* Metrics
+* Visualization
+* Alerting
+* Historical analysis
+* Real-time monitoring
+
+---
+
+# What's Next
+
+The next phase of observability will focus on application-level telemetry:
+
+1. Exposing Spring Boot application metrics using Micrometer
+2. Custom Prometheus scrape configuration
+3. Building custom Grafana dashboards for the application
+4. Log aggregation with Loki
+5. Distributed tracing with OpenTelemetry
+6. Production observability best practices
+-
