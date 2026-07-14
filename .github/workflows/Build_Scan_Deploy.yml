@@ -57,22 +57,22 @@ jobs:
           cluster_name: my-tf-cluster
           location: us-central1-a
 
-     - name: Verify Environment
-       run: |
-        echo "===== gcloud ====="
-        gcloud auth list
-
-        echo "===== kubectl ====="
-        kubectl get nodes
-
-        echo "===== Helm ====="
-        helm version
-
-        echo "===== Kubernetes Context ====="
-        kubectl config current-context
-
-        echo "===== Namespace ====="
-        kubectl get ns
+      - name: Verify Environment
+        run: |
+          echo "===== gcloud ====="
+          gcloud auth list
+         
+          echo "===== kubectl ====="
+          kubectl get nodes
+         
+          echo "===== Helm ====="
+          helm version
+          
+          echo "===== Kubernetes Context ====="
+          kubectl config current-context
+          
+          echo "===== Namespace ====="
+          kubectl get ns
 
       - name: Install / Upgrade Monitoring Platform
         run: |
