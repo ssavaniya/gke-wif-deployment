@@ -79,6 +79,20 @@ jobs:
           chmod +x platform/scripts/install-monitoring.sh
           ./platform/scripts/install-monitoring.sh
 
+      - name: Validate Monitoring Platform
+        run: |
+          echo "===== Verifying Monitoring ====="
+
+          kubectl get pods -n monitoring
+
+          kubectl get servicemonitor hello-gke -n monitoring
+
+          kubectl get prometheusrule hello-gke-alerts -n monitoring
+
+          kubectl get ingress grafana -n monitoring
+
+          echo "Monitoring validation successful."
+
       - name: Run Unit Tests
         run: |
           chmod +x mvnw
