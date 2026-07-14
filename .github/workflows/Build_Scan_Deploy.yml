@@ -44,16 +44,40 @@ jobs:
         with:
           install_components: gke-gcloud-auth-plugin
 
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Verify Helm
+        run: |
+          helm version
+
       - name: Get GKE Credentials
         uses: google-github-actions/get-gke-credentials@v2
         with:
           cluster_name: my-tf-cluster
           location: us-central1-a
 
-      - name: Verify Environment
+     - name: Verify Environment
+       run: |
+        echo "===== gcloud ====="
+        gcloud auth list
+
+        echo "===== kubectl ====="
+        kubectl get nodes
+
+        echo "===== Helm ====="
+        helm version
+
+        echo "===== Kubernetes Context ====="
+        kubectl config current-context
+
+        echo "===== Namespace ====="
+        kubectl get ns
+
+      - name: Install / Upgrade Monitoring Platform
         run: |
-          kubectl get nodes
-          gcloud auth list
+          chmod +x platform/scripts/install-monitoring.sh
+          ./platform/scripts/install-monitoring.sh
 
       - name: Run Unit Tests
         run: |
