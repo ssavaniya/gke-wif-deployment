@@ -1,0 +1,28 @@
+{{- if .Values.serviceMonitor.enabled }}
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+
+metadata:
+  name: hello-gke
+  namespace: monitoring
+
+  labels:
+    release: monitoring
+
+spec:
+
+  selector:
+    matchLabels:
+      app: hello-gke
+
+  namespaceSelector:
+    matchNames:
+      - default
+
+  endpoints:
+    - port: http
+      path: {{ .Values.serviceMonitor.path }}
+      interval: {{ .Values.serviceMonitor.interval }}
+
+{{- end }}

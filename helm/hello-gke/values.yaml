@@ -24,3 +24,7 @@ ingress:
   tls:
     enabled: true
     secretName: hello-gke-tls
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  path: /actuator/prometheus

@@ -1,0 +1,96 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+
+metadata:
+  name: hello-gke-alerts
+  namespace: monitoring
+
+  labels:
+    release: monitoring
+
+spec:
+
+  groups:
+
+  - name: hello-gke.rules
+
+    rules:
+
+    # Application availability
+    - alert: HelloGKEApplicationDown
+
+      expr:
+        kube_deployment_status_replicas_available{
+          deployment="hello-gke",
+          namespace="default"
+        } < 1
+
+      for: 2m
+
+      labels:
+        severity: critical
+
+      annotations:
+        summary: "Hello GKE application is down"
+        description: "No available replicas for hello-gke deployment"
+
+
+    # Pod restart alert
+    - alert: HelloGKEPodRestarting
+
+      expr:
+        increase(
+          kube_pod_container_status_restarts_total{
+            namespace="default",
+            container="hello-gke"
+          }[10m]
+        ) > 3
+
+      for: 5m
+
+      labels:
+        severity: warning
+
+      annotations:
+        summary: "Hello GKE pod restarting frequently"
+        description: "Container restarted more than 3 times in 10 minutes"
+
+
+    # High CPU
+    - alert: HelloGKEHighCPU
+
+      expr:
+        rate(
+          container_cpu_usage_seconds_total{
+            namespace="default",
+            container="hello-gke"
+          }[5m]
+        ) > 0.8
+
+      for: 5m
+
+      labels:
+        severity: warning
+
+      annotations:
+        summary: "Hello GKE CPU usage high"
+        description: "Container CPU usage above 80%"
+
+
+    # High memory
+    - alert: HelloGKEHighMemory
+
+      expr:
+        container_memory_working_set_bytes{
+          namespace="default",
+          container="hello-gke"
+        } > 500000000
+
+      for: 5m
+
+      labels:
+        severity: warning
+
+      annotations:
+        summary: "Hello GKE memory usage high"
+        description: "Container memory usage above 500MB"

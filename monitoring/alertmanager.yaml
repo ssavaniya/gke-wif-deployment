@@ -1,0 +1,18 @@
+global:
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'learndevops694@gmail.com'
+  smtp_auth_username: 'learndevops694@gmail.com'
+  smtp_auth_password: 'aeyorzjmqqlulylm'
+  smtp_require_tls: true
+
+route:
+  receiver: email-notifications
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: email-notifications
+    email_configs:
+      - to: learndevops694@gmail.com
+        send_resolved: true

@@ -55,7 +55,7 @@ jobs:
           kubectl get nodes
           gcloud auth list
 
-      - name: Run Unit Tests + Generate Coverage
+      - name: Run Unit Tests
         run: |
           chmod +x mvnw
           ./mvnw clean test
@@ -79,13 +79,16 @@ jobs:
 
       - name: Build Application
         run: |
-          chmod +x mvnw
           ./mvnw package -DskipTests
 
       - name: Build Docker Image
         run: |
           docker build \
             -t ${{ env.IMAGE_URI }}:${{ github.sha }} .
+
+      - name: Verify Trivy Installation
+        run: |
+          trivy --version
 
       - name: Cache Trivy Database
         uses: actions/cache@v4
@@ -110,16 +113,15 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
-      - name: Run Trivy JSON Scan
+      - name: Generate Trivy JSON Report
         run: |
           trivy image \
-           --ignorefile .trivyignore \
-           --format json \
-           --output trivy-report.json \
-           --severity HIGH,CRITICAL \
-           --ignore-unfixed \
-           ${{ env.IMAGE_URI }}:${{ github.sha }}
-        
+            --ignorefile .trivyignore \
+            --format json \
+            --output trivy-report.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            ${{ env.IMAGE_URI }}:${{ github.sha }}
 
       - name: Upload Trivy Report
         uses: actions/upload-artifact@v4
@@ -130,12 +132,12 @@ jobs:
       - name: Enforce Security Policy
         run: |
           trivy image \
-           --ignorefile .trivyignore \
-           --severity HIGH,CRITICAL \
-           --ignore-unfixed \
-           --exit-code 1 \
-           ${{ env.IMAGE_URI }}:${{ github.sha }}
-        
+            --ignorefile .trivyignore \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            ${{ env.IMAGE_URI }}:${{ github.sha }}
+
       - name: Configure Docker
         run: |
           gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
@@ -154,44 +156,73 @@ jobs:
         run: |
           kubectl rollout status deployment/hello-gke
 
+      - name: Wait for Service Endpoints
+        run: |
+          echo "Waiting for Service endpoints..."
+          for i in {1..30}; do
+            EP=$(kubectl get endpoints hello-gke -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null)
+
+            if [ -n "$EP" ]; then
+              echo "Endpoints Ready: $EP"
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          kubectl get endpoints hello-gke
+          exit 1
+
       - name: Show Deployment
         run: |
           kubectl describe deployment hello-gke
 
       - name: Debug Deployment
         run: |
-          echo "===== Pods ====="
           kubectl get pods -o wide
-
-          echo ""
-          echo "===== Service ====="
           kubectl get svc
-
-          echo ""
-          echo "===== Endpoints ====="
           kubectl get endpoints
-
-          echo ""
-          echo "===== Describe Service ====="
           kubectl describe svc hello-gke
 
-    
       - name: Verify Application
         run: |
-          kubectl run curl-test \
-          --image=curlimages/curl:8.12.1 \
-          --rm -i --restart=Never \
-          -- curl -f http://hello-gke.default.svc.cluster.local
-  
+          echo "Waiting for application..."
+
+          for i in {1..12}; do
+
+            kubectl run curl-test \
+              --image=curlimages/curl:8.12.1 \
+              --rm \
+              --restart=Never \
+              --attach \
+              -- curl --connect-timeout 5 --max-time 10 \
+              http://hello-gke.default.svc.cluster.local && exit 0
+
+            echo "Retrying..."
+            sleep 10
+
+          done
+
+          kubectl get pods
+          kubectl get svc
+          kubectl get endpoints
+          kubectl describe svc hello-gke
+
+          exit 1
+
+      - name: Port Forward Service
+        run: |
+          kubectl port-forward svc/hello-gke 8080:80 >/tmp/pf.log 2>&1 &
+          sleep 10
 
       - name: Functional Test
         run: |
-         docker run --rm \
-           --network host \
-           -v ${{ github.workspace }}/tests:/etc/newman \
-           postman/newman \
-           run /etc/newman/hello-gke-functional.postman_collection.json \
-           --env-var baseUrl=http://hello-gke.default.svc.cluster.local
+          docker run --rm \
+            --network host \
+            -v ${{ github.workspace }}/tests:/etc/newman \
+            postman/newman \
+            run /etc/newman/hello-gke-functional.postman_collection.json \
+            --env-var baseUrl=http://localhost:8080
 
       - name: Verify Deployment
         run: |
@@ -202,9 +233,7 @@ jobs:
       - name: Cleanup Runner
         if: always()
         run: |
-          echo "Cleaning Docker..."
           docker system prune -af
-
-          echo "Cleaning Trivy reports..."
           rm -f trivy-results.sarif
           rm -f trivy-report.json
+          rm -f /tmp/pf.log
