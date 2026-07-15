@@ -28,3 +28,10 @@ serviceMonitor:
   enabled: true
   interval: 15s
   path: /actuator/prometheus
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
