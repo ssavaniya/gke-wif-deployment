@@ -1,0 +1,491 @@
+# Docker Networking
+
+## Overview
+
+Docker Networking allows containers to communicate with:
+
+- Other containers
+- The Docker host
+- External systems (Internet)
+
+Without networking, containers are isolated and cannot exchange data.
+
+---
+
+# Why Do We Need Docker Networking?
+
+Most applications consist of multiple services.
+
+Example:
+
+```text
+Spring Boot Application
+        │
+        ▼
+MySQL Database
+```
+
+The application needs a way to connect to the database. Docker Networking provides this communication.
+
+---
+
+# How Docker Networking Works
+
+```text
+                Internet
+                    │
+                    ▼
+             Docker Host
+                    │
+        -----------------------
+        |   Docker Network    |
+        |                     |
+        |  App Container      |
+        |         │           |
+        |         │           |
+        |  MySQL Container    |
+        -----------------------
+```
+
+Containers connected to the same Docker network can communicate with each other.
+
+---
+
+# Types of Docker Networks
+
+Docker provides several network drivers.
+
+| Network | Purpose |
+|----------|----------|
+| Bridge | Default network for containers on one host |
+| Host | Container shares the host's network |
+| None | No networking |
+| Overlay | Connects containers across multiple Docker hosts |
+| Macvlan | Gives containers their own IP address on the physical network |
+
+For most applications, the **Bridge** network is used.
+
+---
+
+# 1. Bridge Network (Default)
+
+Docker automatically creates a bridge network during installation.
+
+View existing networks:
+
+```bash
+docker network ls
+```
+
+Example:
+
+```text
+NETWORK ID     NAME      DRIVER
+
+xxxxxx         bridge    bridge
+yyyyyy         host      host
+zzzzzz         none      null
+```
+
+If no network is specified, containers join the default **bridge** network.
+
+---
+
+# Bridge Network Example
+
+```text
+Docker Host
+
+Bridge Network
+
++-------------------------------+
+
+Spring Boot Container
+
+172.17.0.2
+
+MySQL Container
+
+172.17.0.3
+
+Redis Container
+
+172.17.0.4
+
++-------------------------------+
+```
+
+Containers communicate using their container names or IP addresses.
+
+---
+
+# Create a Custom Bridge Network
+
+Create a new network:
+
+```bash
+docker network create my-network
+```
+
+Verify:
+
+```bash
+docker network ls
+```
+
+Run containers on the custom network:
+
+```bash
+docker run -d --name mysql \
+--network my-network mysql
+```
+
+```bash
+docker run -d --name app \
+--network my-network hello-gke
+```
+
+Now the application can connect to the database using:
+
+```text
+mysql
+```
+
+instead of remembering IP addresses.
+
+---
+
+# 2. Host Network
+
+With Host networking, the container shares the host machine's network.
+
+Example:
+
+```bash
+docker run --network host nginx
+```
+
+Result:
+
+```text
+Host Port 80
+
+↓
+
+Container Port 80
+```
+
+No port mapping is required.
+
+### Use Cases
+
+- Monitoring tools
+- High-performance networking
+- Local testing
+
+---
+
+# 3. None Network
+
+Containers have no network connectivity.
+
+Example:
+
+```bash
+docker run --network none nginx
+```
+
+Result:
+
+```text
+No Internet
+
+No Communication
+
+No Network Interface
+```
+
+Used for highly secure or isolated workloads.
+
+---
+
+# 4. Overlay Network
+
+Overlay networking connects containers running on different Docker hosts.
+
+```text
+Server A
+
+App Container
+
+       │
+
+Overlay Network
+
+       │
+
+Server B
+
+Database Container
+```
+
+Mostly used with Docker Swarm.
+
+---
+
+# 5. Macvlan Network
+
+Macvlan assigns a unique IP address to each container on the physical network.
+
+```text
+Laptop
+
+192.168.1.10
+
+↓
+
+Docker Host
+
+↓
+
+Container
+
+192.168.1.50
+```
+
+The container behaves like a separate machine on the LAN.
+
+---
+
+# Port Mapping
+
+Containers have private IP addresses.
+
+To access them externally, map a host port.
+
+Example:
+
+```bash
+docker run -p 8080:80 nginx
+```
+
+Meaning:
+
+```text
+Host Port 8080
+
+↓
+
+Container Port 80
+```
+
+Access the application:
+
+```
+http://localhost:8080
+```
+
+---
+
+# Useful Docker Networking Commands
+
+## List Networks
+
+```bash
+docker network ls
+```
+
+---
+
+## Inspect a Network
+
+```bash
+docker network inspect bridge
+```
+
+Shows:
+
+- Connected containers
+- IP addresses
+- Subnet
+- Gateway
+
+---
+
+## Connect a Running Container
+
+```bash
+docker network connect my-network nginx
+```
+
+---
+
+## Disconnect a Container
+
+```bash
+docker network disconnect my-network nginx
+```
+
+---
+
+## Remove a Network
+
+```bash
+docker network rm my-network
+```
+
+---
+
+# Docker Networking in This Project
+
+Although we did not create custom Docker networks, Docker networking was used during development.
+
+## Functional Testing
+
+We executed Newman using the host network:
+
+```bash
+docker run \
+--network host \
+postman/newman
+```
+
+Using `--network host` allowed Newman to access the application running locally at:
+
+```
+http://localhost:8080
+```
+
+This is an example of **Host Networking**.
+
+---
+
+## Docker Image Build
+
+During image creation:
+
+```text
+Spring Boot Application
+
+↓
+
+Docker Image
+```
+
+Networking is not required because only the image is being built.
+
+---
+
+## Trivy Image Scan
+
+Trivy scanned the Docker image directly.
+
+No container-to-container networking was required.
+
+---
+
+# Docker Networking vs Kubernetes Networking
+
+| Docker | Kubernetes |
+|----------|------------|
+| Bridge Network | CNI Plugin (Calico, Cilium, etc.) |
+| Container IP | Pod IP |
+| Port Mapping (-p) | Kubernetes Service |
+| Docker Network | Kubernetes Cluster Network |
+
+Once applications are deployed to Kubernetes, networking is handled by Kubernetes rather than Docker.
+
+---
+
+# Verification Commands
+
+View Docker networks:
+
+```bash
+docker network ls
+```
+
+Inspect the default bridge network:
+
+```bash
+docker network inspect bridge
+```
+
+Run a container using host networking:
+
+```bash
+docker run --rm --network host nginx
+```
+
+Run a container on a custom network:
+
+```bash
+docker network create demo-network
+
+docker run -d --network demo-network nginx
+```
+
+---
+
+# Interview Questions
+
+## What is Docker Networking?
+
+Docker Networking enables containers to communicate with each other, the Docker host, and external systems.
+
+---
+
+## What is the default Docker network?
+
+The default network is the **Bridge** network.
+
+---
+
+## What is the difference between Bridge and Host networking?
+
+**Bridge**
+
+- Containers communicate through a virtual Docker network.
+- Port mapping is required to expose services.
+
+**Host**
+
+- The container shares the host's network.
+- No port mapping is required.
+
+---
+
+## Why do we use `-p 8080:80`?
+
+It maps **host port 8080** to **container port 80**, allowing external users to access the application.
+
+---
+
+## What is Docker DNS?
+
+Containers connected to the same Docker network can communicate using container names instead of IP addresses.
+
+---
+
+# Lessons Learned
+
+Through this topic I learned:
+
+- Why Docker networking is required
+- Different Docker network types
+- How containers communicate
+- Host vs Bridge networking
+- Port mapping
+- Basic Docker networking commands
+- How Docker networking differs from Kubernetes networking
+
+---
+
+# Key Takeaways
+
+- Docker Networking allows containers to communicate securely.
+- The **Bridge** network is the default and most commonly used.
+- **Host** networking shares the host's network stack.
+- **Port mapping** exposes container services externally.
+- In this project, we used **Host Networking** during functional testing with Newman.
+- Once applications move to Kubernetes, networking is managed by Kubernetes Services and Ingress rather than Docker networks.
